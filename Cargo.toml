@@ -5,3 +5,4 @@ authors = ["Kyle M. Douglass <kyle.m.douglass@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+rouille = "3.0"
