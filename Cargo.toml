@@ -6,3 +6,4 @@ edition = "2018"
 
 [dependencies]
 rouille = "3.0"
+structopt = "0.2"

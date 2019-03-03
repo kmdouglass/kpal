@@ -1,7 +1,17 @@
 use rouille::{router, Request, Response};
+use std::net::SocketAddr;
+use structopt::StructOpt;
+
+#[derive(StructOpt)]
+struct Cli {
+    #[structopt(short = "a", long = "address", default_value = "0.0.0.0:8000")]
+    addr: SocketAddr,
+}
 
 fn main() {
-    rouille::start_server("0.0.0.0:8000", move |request| {
+    let args = Cli::from_args();
+
+    rouille::start_server(&args.addr, move |request| {
         router!(request,
 
             // GET /
