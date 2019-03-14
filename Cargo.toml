@@ -7,3 +7,7 @@ edition = "2018"
 [dependencies]
 rouille = "3.0"
 structopt = "0.2"
+
+[[example]]
+name = "hello-world"
+crate-type = ["dylib"]
