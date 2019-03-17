@@ -4,10 +4,13 @@ version = "0.1.0"
 authors = ["Kyle M. Douglass <kyle.m.douglass@gmail.com>"]
 edition = "2018"
 
+[workspace]
+
+members = [
+    "./",
+    "kpal-peripheral",
+]
+
 [dependencies]
 rouille = "3.0"
 structopt = "0.2"
-
-[[example]]
-name = "hello-world"
-crate-type = ["dylib"]

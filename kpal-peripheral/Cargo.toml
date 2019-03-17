@@ -1,0 +1,9 @@
+[package]
+name = "kpal-peripheral"
+version = "0.1.0"
+authors = ["kmdouglass <kyle.m.douglass@gmail.com>"]
+edition = "2018"
+
+[[example]]
+name = "hello-world"
+crate-type = ["dylib"]
