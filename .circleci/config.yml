@@ -10,3 +10,7 @@ jobs:
       - run:
           name: Build all targets
           command: cargo build --all --all-targets
+
+      - run:
+          name: Unit test
+          command: cargo test --all
