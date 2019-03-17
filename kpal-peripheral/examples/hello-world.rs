@@ -1,7 +1,7 @@
-extern crate kpal;
+extern crate kpal_peripheral;
 
 use std::sync::Arc;
-use kpal::peripheral::{Peripheral, Property, Value};
+use kpal_peripheral::{Peripheral, Property, Value};
 
 pub struct HelloWorld { }
 
