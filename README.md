@@ -1,3 +1,5 @@
 # Kyle's Peripheral Abstraction Layer
 
-Control peripherals on embedded Linux systems with Rust.
+[![CircleCI](https://circleci.com/gh/kmdouglass/kpal.svg?style=svg)](https://circleci.com/gh/kmdouglass/kpal)
+
+Under development.
