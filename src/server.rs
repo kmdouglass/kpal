@@ -32,32 +32,6 @@ pub fn api() -> impl Fn(&Request) -> Response {
                 Response::empty_404()
             },
 
-            // GET /peripherals/streams
-            (GET) (/peripherals/streams) => {
-                // Returns a list of all streams of all peripherals currently managed by KPAL.
-                //
-                // streams are two-way communication channels between the client and the daemon.
-                Response::empty_404()
-            },
-
-            // GET /peripherals/{id_peripheral}/streams
-            (GET) (/peripherals/{id_peripheral: u32}/streams) => {
-                // Returns all the streams of the given peripheral.
-                Response::empty_404()
-            },
-
-            // GET /peripherals/{id_peripheral}/streams/{id_stream}
-            (GET) (/peripherals/{id_peripheral: u32}/streams/{id_stream: u32}) => {
-                // Returns the given stream of the given peripheral.
-                Response::empty_404()
-            },
-
-            // PATCH /peripherals/{id_peripheral}/streams/{id_stream}
-            (PATCH) (/peripherals/{id_peripheral: u32}/streams/{id_stream: u32}) => {
-                // Updates the given stream of the given peripheral.
-                Response::empty_404()
-            },
-
             _ => Response::empty_404()
         )
     }
