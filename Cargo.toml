@@ -12,5 +12,7 @@ members = [
 ]
 
 [dependencies]
+kpal-peripheral= { path = "kpal-peripheral" }
+libloading = "0.5"
 rouille = "3.0"
 structopt = "0.2"
