@@ -1,6 +1,6 @@
 use rouille::{router, Request, Response};
 
-pub fn api() -> impl Fn(&Request) -> Response {
+pub fn routes() -> impl Fn(&Request) -> Response {
     move |request| {
         router!(request,
 
