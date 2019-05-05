@@ -7,16 +7,16 @@ use lazy_static::lazy_static;
 use log;
 use structopt::StructOpt;
 
-use kpal::constants::{KPAL_DIR, PLUGIN_DIR};
+use kpal::constants::{KPAL_DIR, PERIPHERAL_DIR};
 use kpal::routes::routes;
-use kpal::utils::find_plugins;
+use kpal::utils;
 
 lazy_static! {
-    static ref DEFAULT_PLUGIN_DIR: String = {
+    static ref DEFAULT_PERIPHERAL_DIR: String = {
         let mut default_dir = PathBuf::new();
         default_dir.push(home_dir().expect("Could not determine user's home directory"));
         default_dir.push(KPAL_DIR);
-        default_dir.push(PLUGIN_DIR);
+        default_dir.push(PERIPHERAL_DIR);
         default_dir.to_string_lossy().to_string()
     };
 }
@@ -28,11 +28,11 @@ struct Cli {
 
     #[structopt(
         short = "p",
-        long = "plugin-dir",
-        raw(default_value = "&DEFAULT_PLUGIN_DIR"),
+        long = "peripheral-dir",
+        raw(default_value = "&DEFAULT_PERIPHERAL_DIR"),
         parse(from_os_str)
     )]
-    plugin_dir: PathBuf,
+    peripheral_dir: PathBuf,
 }
 
 fn main() {
@@ -40,14 +40,14 @@ fn main() {
     let args = Cli::from_args();
 
     log::info!(
-        "Searching for plugins inside the following directory: {:?}",
-        &args.plugin_dir
+        "Searching for peripheral library files inside the following directory: {:?}",
+        &args.peripheral_dir
     );
-    let plugin_libs: Vec<PathBuf> = match find_plugins(&args.plugin_dir).expect("error") {
-        Some(libs) => libs,
+    let peripherals = match utils::init(&args.peripheral_dir) {
+        Some(peripherals) => peripherals,
         None => {
-            log::info!("No plugin library files found in {:?}", &args.plugin_dir);
-            Vec::new()
+            log::error!("Could not load any peripheral libraries.");
+            panic!("Daemon failed to initialize.");
         }
     };
 
