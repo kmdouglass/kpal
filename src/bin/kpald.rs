@@ -51,6 +51,10 @@ fn main() {
         }
     };
 
-    // Launches the REST server
-    rouille::start_server(&args.addr, routes());
+    log::info!("Launching the server at {}...", &args.addr);
+    rouille::start_server(&args.addr, move |request| {
+        let response = routes(&request, &peripherals);
+
+        response
+    });
 }
