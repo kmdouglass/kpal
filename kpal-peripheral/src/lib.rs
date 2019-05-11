@@ -5,13 +5,16 @@ use std::cmp::{Eq, PartialEq};
 
 use libc::{c_char, c_double, int32_t};
 
-pub trait KpalApiV0<T> {
-    fn kpal_api_new() -> *mut T;
-    fn kpal_api_free(kpal_api: *mut T);
+use error::Error;
 
-    fn kpal_property_name(&self, id: usize) -> &str;
-    fn kpal_property_value(&self, id: usize) -> &Value;
-    fn kpal_property_set_value(&mut self, id: usize, value: Value);
+pub trait Peripheral {
+    fn new() -> Self
+    where
+        Self: Sized;
+    fn error(&mut self) -> &mut Error;
+    fn property_name(&self, id: usize) -> &str;
+    fn property_value(&self, id: usize) -> &Value;
+    fn property_set_value(&mut self, id: usize, value: Value);
 }
 
 /// A property is a value that may be read from or set on a peripheral.
