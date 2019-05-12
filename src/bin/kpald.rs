@@ -8,8 +8,8 @@ use log;
 use structopt::StructOpt;
 
 use kpal::constants::{KPAL_DIR, PERIPHERAL_DIR};
+use kpal::peripheral_manager::PeripheralManager;
 use kpal::routes::routes;
-use kpal::utils;
 
 lazy_static! {
     static ref DEFAULT_PERIPHERAL_DIR: String = {
@@ -43,17 +43,14 @@ fn main() {
         "Searching for peripheral library files inside the following directory: {:?}",
         &args.peripheral_dir
     );
-    let peripherals = match utils::init(&args.peripheral_dir) {
-        Some(peripherals) => peripherals,
-        None => {
-            log::error!("Could not load any peripheral libraries.");
-            panic!("Daemon failed to initialize.");
-        }
-    };
+    let mut manager = PeripheralManager::new();
+    manager
+        .init(&args.peripheral_dir)
+        .expect("Initialization of the PeripheralManager failed.");
 
     log::info!("Launching the server at {}...", &args.addr);
     rouille::start_server(&args.addr, move |request| {
-        let response = routes(&request, &peripherals);
+        let response = routes(&request, &manager);
 
         response
     });

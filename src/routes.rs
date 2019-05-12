@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-
 use rouille::{router, Request, Response};
 
-use crate::peripherals::Peripheral;
+use crate::peripheral_manager::PeripheralManager;
 
-pub fn routes(request: &Request, peripherals: &HashMap<usize, Peripheral>) -> Response {
+pub fn routes(request: &Request, manager: &PeripheralManager) -> Response {
     router!(request,
 
         // GET /
