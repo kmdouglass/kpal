@@ -5,12 +5,17 @@ use std::sync::Mutex;
 
 use log;
 use redis;
+use serde_json;
 use url::Url;
 
 use crate::constants::DATABASE_INDEX;
+use crate::models::Library;
 
 // TODO Provide a connection pool rather than a single mutex to the database connection
-pub fn init(db_addr: &Url) -> Result<Mutex<redis::Connection>, DatabaseInitError> {
+pub fn init(
+    db_addr: &Url,
+    libs: &Vec<Library>,
+) -> Result<Mutex<redis::Connection>, DatabaseInitError> {
     let mut db_addr = db_addr.clone();
     db_addr.set_path(DATABASE_INDEX);
     log::info!("Initializing the database connection to {}", db_addr);
@@ -20,14 +25,33 @@ pub fn init(db_addr: &Url) -> Result<Mutex<redis::Connection>, DatabaseInitError
         .get_connection()
         .map_err(|e| DatabaseInitError { side: Box::new(e) })?;
 
-    log::info!("Flushing database number {}", DATABASE_INDEX);
-    redis::cmd("FLUSHDB")
+    log::debug!("Flushing database number {}", DATABASE_INDEX);
+    redis::cmd("FLUSHALL")
         .query(&connection)
         .map_err(|e| DatabaseInitError { side: Box::new(e) })?;
 
-    // TODO Add libraries to the database
-
+    libs_to_json(libs, &connection).map_err(|e| DatabaseInitError { side: Box::new(e) })?;
     Ok(Mutex::new(connection))
+}
+
+fn libs_to_json(libs: &Vec<Library>, con: &redis::Connection) -> Result<(), DatabaseInitError> {
+    log::info!("Writing peripheral library information to the database");
+
+    let mut lib_json: String;
+    for lib in libs.iter() {
+        lib_json =
+            serde_json::to_string(&lib).map_err(|e| DatabaseInitError { side: Box::new(e) })?;;
+
+        log::debug!("Writing {} to key libraries:{}", &lib_json, &lib.id);
+        redis::cmd("JSON.SET")
+            .arg(format!("libraries:{}", &lib.id))
+            .arg(".")
+            .arg(format!("{}", &lib_json))
+            .query(con)
+            .map_err(|e| DatabaseInitError { side: Box::new(e) })?;
+    }
+
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -47,6 +71,6 @@ impl Error for DatabaseInitError {
 
 impl fmt::Display for DatabaseInitError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "DatabaseInitError {{ Cause {} }}", &*self.side)
+        write!(f, "DatabaseInitError {{ Cause: {} }}", &*self.side)
     }
 }
