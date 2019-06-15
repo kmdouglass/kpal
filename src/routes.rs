@@ -1,8 +1,6 @@
 use rouille::{router, Request, Response};
 
-use crate::peripheral_manager::PeripheralManager;
-
-pub fn routes(request: &Request, manager: &PeripheralManager) -> Response {
+pub fn routes(request: &Request) -> Response {
     router!(request,
 
         // GET /
