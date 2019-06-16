@@ -1,66 +1,35 @@
 use log;
 use redis;
-use rouille::{router, Request, Response, ResponseBody};
+use rouille::{router, Request, Response};
+
+use crate::handlers;
 
 pub fn routes(request: &Request, db: &redis::Connection) -> Response {
     router!(request,
 
+            // GET /
             (GET) (/) => {
                 log::info!("GET /");
 
                 Response::text("Kyle's Peripheral Abstraction Layer (KPAL)")
             },
 
+            // GET /api/v0/libraries
             (GET) (/api/v0/libraries) => {
                 log::info!("GET /api/v0/libraries");
-
-                let keys: Vec<String> = match redis::cmd("KEYS")
-                    .arg("libraries:*")
-                    .query(db) {
-                        Ok(result) => result,
-                        Err(e) => {
-                            log::error!("{}", e);
-                            return Response::empty_404()
-                        },
-                    };
-
-                let result: String = match redis::cmd("JSON.MGET")
-                    .arg(keys)
-                    .arg(".")
-                    .query::<Vec<String>>(db) {
-                        Ok(result) => "[".to_owned() + &result.join(",") + "]",
-                        Err(e) => {
-                            log::error!("{}", e);
-                            return Response::empty_404()
-                        },
-                    };
-
-                Response {
-                    status_code: 200,
-                    headers: vec![("Content-Type".into(), "application/json; charset=utf-8".into())],
-                    data: ResponseBody::from_data(result),
-                    upgrade: None,
-                }
-
+                handlers::get_libraries(&db).unwrap_or_else(|e| {
+                    log::error!("{}", e);
+                    Response::empty_404()
+                })
             },
 
+            // GET /api/v0/libraries/{id}
             (GET) (/api/v0/libraries/{id: usize}) => {
                 log::info!("GET /api/v0/libraries/{}", id);
-
-                let result: String = match redis::cmd("JSON.GET")
-                    .arg(format!("libraries:{}", &id))
-                    .arg(".")
-                    .query(db) {
-                        Ok(result) => result,
-                        Err(_) => return Response::empty_404(),
-                    };
-
-                Response {
-                    status_code: 200,
-                    headers: vec![("Content-Type".into(), "application/json; charset=utf-8".into())],
-                    data: ResponseBody::from_data(result),
-                    upgrade: None,
-                }
+                handlers::get_libraries_id(&db, id).unwrap_or_else(|e| {
+                    log::error!("{}", e);
+                    Response::empty_404()
+                })
             },
     /*
             // GET /peripherals

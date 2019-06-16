@@ -1,26 +1,21 @@
 use libloading::Library as Dll;
-use serde::ser::{Serialize, SerializeStruct, Serializer};
+use serde::{Deserialize, Serialize};
 
+#[derive(Deserialize, Serialize)]
 pub struct Library {
     pub id: usize,
     pub name: String,
-    library: Dll,
+
+    #[serde(skip, default = "none")]
+    library: Option<Dll>,
 }
 
 impl Library {
-    pub fn new(id: usize, name: String, library: Dll) -> Library {
+    pub fn new(id: usize, name: String, library: Option<Dll>) -> Library {
         Library { id, name, library }
     }
 }
 
-impl Serialize for Library {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("Library", 2)?;
-        state.serialize_field("id", &self.id)?;
-        state.serialize_field("name", &self.name)?;
-        state.end()
-    }
+fn none() -> Option<Dll> {
+    None
 }

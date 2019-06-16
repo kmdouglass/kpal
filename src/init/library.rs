@@ -101,7 +101,7 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<Library>> {
             }
         };
 
-        libraries.push(Library::new(counter, file_name, lib));
+        libraries.push(Library::new(counter, file_name, Some(lib)));
 
         counter += 1;
     }
