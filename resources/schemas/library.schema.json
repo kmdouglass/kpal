@@ -14,5 +14,5 @@
 	    "type": "string"
 	}
     },
-    "required": [ "name" ]
+    "required": [ "id", "name" ]
 }

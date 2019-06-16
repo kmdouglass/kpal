@@ -48,9 +48,8 @@ pub struct Cli {
 }
 
 pub fn init(args: &Cli) -> Result<Mutex<redis::Connection>> {
-    let libraries =
-        library::init(&args.peripheral_dir).map_err(|e| InitError { side: Box::new(e) })?;
-    let db = database::init(&args.db_addr).map_err(|e| InitError { side: Box::new(e) })?;
+    let libs = library::init(&args.peripheral_dir).map_err(|e| InitError { side: Box::new(e) })?;
+    let db = database::init(&args.db_addr, &libs).map_err(|e| InitError { side: Box::new(e) })?;
 
     Ok(db)
 }
@@ -74,6 +73,6 @@ impl Error for InitError {
 
 impl fmt::Display for InitError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "InitError {{ Cause {} }}", &*self.side)
+        write!(f, "InitError {{ Cause: {} }}", &*self.side)
     }
 }
