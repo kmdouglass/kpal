@@ -21,24 +21,24 @@ pub struct Peripheral {
 pub struct VTable {
     pub peripheral_new: extern "C" fn() -> *mut Peripheral,
     pub peripheral_free: extern "C" fn(*mut Peripheral),
-    pub property_name: extern "C" fn(peripheral: *const Peripheral, id: size_t) -> *const c_char,
-    pub property_value:
+    pub attribute_name: extern "C" fn(peripheral: *const Peripheral, id: size_t) -> *const c_char,
+    pub attribute_value:
         extern "C" fn(peripheral: *const Peripheral, id: size_t, value: *mut Value) -> c_int,
-    pub set_property_value:
+    pub set_attribute_value:
         extern "C" fn(peripheral: *mut Peripheral, id: size_t, value: *const Value) -> c_int,
 }
 
 #[derive(Debug)]
 #[repr(C)]
-pub struct Property {
+pub struct Attribute {
     pub name: CString,
     pub value: Value,
 }
 
-impl Eq for Property {}
+impl Eq for Attribute {}
 
-impl PartialEq for Property {
-    fn eq(&self, other: &Property) -> bool {
+impl PartialEq for Attribute {
+    fn eq(&self, other: &Attribute) -> bool {
         self.name == other.name
     }
 }
@@ -50,37 +50,37 @@ pub enum Value {
     Float(f64),
 }
 
-pub type Result<T> = std::result::Result<T, PropertyError>;
+pub type Result<T> = std::result::Result<T, AttributeError>;
 
-/// A property error is raised when there is a failure to get or set a property's value.
+/// An AttributeError is raised when there is a failure to get or set a attribute's value.
 #[derive(Debug)]
-pub struct PropertyError {
+pub struct AttributeError {
     action: Action,
     message: String,
 }
 
-impl PropertyError {
-    pub fn new(action: Action, message: &str) -> PropertyError {
-        PropertyError {
+impl AttributeError {
+    pub fn new(action: Action, message: &str) -> AttributeError {
+        AttributeError {
             action: action,
             message: String::from(message),
         }
     }
 }
 
-impl fmt::Display for PropertyError {
+impl fmt::Display for AttributeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "PropertyError {{ action: {:?}, message {} }}",
+            "AttributeError {{ action: {:?}, message {} }}",
             self.action, self.message
         )
     }
 }
 
-impl error::Error for PropertyError {
+impl error::Error for AttributeError {
     fn description(&self) -> &str {
-        "failed to access property value"
+        "failed to access attribute value"
     }
 }
 
@@ -96,11 +96,11 @@ mod tests {
 
     #[test]
     fn properties_with_the_same_name_and_same_values_are_equal() {
-        let prop1_left = Property {
+        let prop1_left = Attribute {
             name: CString::new("prop1").unwrap(),
             value: Value::Int(0),
         };
-        let prop1_right = Property {
+        let prop1_right = Attribute {
             name: CString::new("prop1").unwrap(),
             value: Value::Int(0),
         };
@@ -110,11 +110,11 @@ mod tests {
 
     #[test]
     fn properties_with_the_same_name_and_different_values_are_equal() {
-        let prop1_left = Property {
+        let prop1_left = Attribute {
             name: CString::new("prop1").unwrap(),
             value: Value::Int(0),
         };
-        let prop1_right = Property {
+        let prop1_right = Attribute {
             name: CString::new("prop1").unwrap(),
             value: Value::Int(1),
         };
@@ -124,11 +124,11 @@ mod tests {
 
     #[test]
     fn properties_with_different_names_are_not_equal() {
-        let prop1 = Property {
+        let prop1 = Attribute {
             name: CString::new("prop1").unwrap(),
             value: Value::Int(0),
         };
-        let prop2 = Property {
+        let prop2 = Attribute {
             name: CString::new("prop2").unwrap(),
             value: Value::Int(0),
         };
