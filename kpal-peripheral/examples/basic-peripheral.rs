@@ -1,32 +1,28 @@
 use std::boxed::Box;
 use std::ffi::{CStr, CString};
 use std::ptr;
-use std::sync::{Arc, Mutex};
 
-use libc::{c_char, c_int, c_void, size_t};
+use libc::{c_char, c_int, size_t};
 
 use kpal_peripheral::constants::{PERIPHERAL_ERR, PERIPHERAL_OK};
-use kpal_peripheral::{Action, Peripheral, Property, PropertyError, Result, Value};
+use kpal_peripheral::{Action, Peripheral, Property, PropertyError, Result, VTable, Value};
 
+#[repr(C)]
 struct Basic {
     props: Vec<Property>,
 }
 
-impl Peripheral for Basic {
+impl Basic {
     fn new() -> Basic {
         Basic {
             props: vec![
                 Property {
                     name: CString::new("x").expect("Error creating CString"),
-                    value: Arc::new(Mutex::new(Value::Float(0.0))),
+                    value: Value::Float(0.0),
                 },
                 Property {
                     name: CString::new("y").expect("Error creating CString"),
-                    value: Arc::new(Mutex::new(Value::Integer(0))),
-                },
-                Property {
-                    name: CString::new("z").expect("Error creating CString"),
-                    value: Arc::new(Mutex::new(Value::String(String::from("0")))),
+                    value: Value::Int(0),
                 },
             ],
         }
@@ -37,7 +33,7 @@ impl Peripheral for Basic {
             Some(property) => Ok(&property.name),
             None => Err(PropertyError::new(
                 Action::Get,
-                &format!("Property index {} does not exist.", id),
+                &format!("Property at index {} does not exist.", id),
             )),
         }
     }
@@ -46,40 +42,30 @@ impl Peripheral for Basic {
         let property = self.props.get(id).ok_or_else(|| {
             PropertyError::new(
                 Action::Get,
-                &format!("Property index {} does not exist.", id),
+                &format!("Property at index {} does not exist.", id),
             )
         })?;
 
-        let value = property.value.lock().map_err(|_| {
-            PropertyError::new(
-                Action::Get,
-                &format!("Could not access lock for property {}", id),
-            )
-        })?;
-
-        Ok((*value).clone())
+        Ok(property.value.clone())
     }
 
-    /// Sets the value of the given property.
-    fn property_set_value(&self, id: usize, value: &Value) -> Result<()> {
+    /// Sets the value of the property given by the id.
+    fn property_set_value(&mut self, id: usize, value: &Value) -> Result<()> {
         use Value::*;
 
-        let property = self.props.get(id).ok_or_else(|| {
-            PropertyError::new(
-                Action::Get,
-                &format!("Property index {} does not exist.", id),
-            )
-        })?;
+        let current_value = &mut self
+            .props
+            .get_mut(id)
+            .ok_or_else(|| {
+                PropertyError::new(
+                    Action::Get,
+                    &format!("Property at index {} does not exist.", id),
+                )
+            })?
+            .value;
 
-        let mut current_value = property.value.lock().map_err(|_| {
-            PropertyError::new(
-                Action::Get,
-                &format!("Could not access lock for property {}", id),
-            )
-        })?;
-
-        match (&*current_value, &value) {
-            (Integer(_), Integer(_)) | (Float(_), Float(_)) | (String(_), String(_)) => {
+        match (&current_value, &value) {
+            (Int(_), Int(_)) | (Float(_), Float(_)) => {
                 *current_value = (*value).clone();
                 Ok(())
             }
@@ -91,28 +77,35 @@ impl Peripheral for Basic {
     }
 }
 
-// TODO Generate the C-bindings in a macro
 #[no_mangle]
-extern "C" fn peripheral_new() -> *mut c_void {
-    let peripheral: Box<Box<dyn Peripheral>> = Box::new(Box::new(Basic::new()));
-    Box::into_raw(peripheral) as *mut c_void
+pub extern "C" fn vtable() -> VTable {
+    VTable {
+        peripheral_new: peripheral_new,
+        peripheral_free: peripheral_free,
+        property_name: property_name,
+        property_value: property_value,
+        set_property_value: set_property_value,
+    }
 }
 
-#[no_mangle]
-extern "C" fn peripheral_free(peripheral: *mut c_void) {
+extern "C" fn peripheral_new() -> *mut Peripheral {
+    let peripheral: Box<Basic> = Box::new(Basic::new());
+    Box::into_raw(peripheral) as *mut Peripheral
+}
+
+extern "C" fn peripheral_free(peripheral: *mut Peripheral) {
     if peripheral.is_null() {
         return;
     }
-    let peripheral = peripheral as *mut Box<dyn Peripheral>;
+    let peripheral = peripheral as *mut Box<Peripheral>;
     unsafe {
         Box::from_raw(peripheral);
     }
 }
 
-#[no_mangle]
-extern "C" fn property_name(peripheral: *const c_void, id: size_t) -> *const c_char {
+extern "C" fn property_name(peripheral: *const Peripheral, id: size_t) -> *const c_char {
     assert!(!peripheral.is_null());
-    let peripheral = peripheral as *const Box<dyn Peripheral>;
+    let peripheral = peripheral as *const Box<Basic>;
     unsafe {
         match (*peripheral).property_name(id) {
             Ok(name) => name.as_ptr(),
@@ -121,10 +114,13 @@ extern "C" fn property_name(peripheral: *const c_void, id: size_t) -> *const c_c
     }
 }
 
-#[no_mangle]
-extern "C" fn property_value(peripheral: *const c_void, id: size_t, value: *mut c_void) -> c_int {
+extern "C" fn property_value(
+    peripheral: *const Peripheral,
+    id: size_t,
+    value: *mut Value,
+) -> c_int {
     assert!(!peripheral.is_null());
-    let peripheral = peripheral as *const Box<dyn Peripheral>;
+    let peripheral = peripheral as *const Box<Basic>;
     let value = value as *mut Value;
     unsafe {
         match (*peripheral).property_value(id) {
@@ -136,16 +132,15 @@ extern "C" fn property_value(peripheral: *const c_void, id: size_t, value: *mut 
     PERIPHERAL_OK
 }
 
-#[no_mangle]
-extern "C" fn property_set_value(
-    peripheral: *const c_void,
+extern "C" fn set_property_value(
+    peripheral: *mut Peripheral,
     id: size_t,
-    value: *const c_void,
+    value: *const Value,
 ) -> c_int {
     if peripheral.is_null() || value.is_null() {
         return PERIPHERAL_ERR;
     }
-    let peripheral = peripheral as *const Box<dyn Peripheral>;
+    let peripheral = peripheral as *mut Box<Basic>;
     let value = value as *const Value;
 
     unsafe {
@@ -162,17 +157,13 @@ mod tests {
 
     #[test]
     fn set_property_value() {
-        let peripheral = Basic::new();
-        let new_values = vec![
-            Value::Float(3.14),
-            Value::Integer(4),
-            Value::String(String::from("pi")),
-        ];
+        let mut peripheral = Basic::new();
+        let new_values = vec![Value::Float(3.14), Value::Int(4)];
 
         // Test setting each property to the new value
         for (i, value) in new_values.into_iter().enumerate() {
             peripheral.property_set_value(i, &value).unwrap();
-            let actual = peripheral.props[i].value.lock().unwrap();
+            let actual = &peripheral.props[i].value;
             assert_eq!(
                 value, *actual,
                 "Expected property value to be {:?} but it was {:?}",
@@ -183,12 +174,12 @@ mod tests {
 
     #[test]
     fn set_property_wrong_variant() {
-        let peripheral = Basic::new();
+        let mut peripheral = Basic::new();
         let new_value = Value::Float(42.0);
 
         let result = peripheral.property_set_value(1, &new_value);
         match result {
-            Ok(_) => panic!("Expected a triggered error state."),
+            Ok(_) => panic!("Expected different value variants."),
             Err(_) => (),
         }
     }

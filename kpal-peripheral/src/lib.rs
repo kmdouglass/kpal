@@ -5,31 +5,34 @@ pub mod constants {
     pub const PERIPHERAL_ERR: c_int = -1;
 }
 
-// TODO Create a macro to generate properties inside a device library
 use std::cmp::{Eq, PartialEq};
 use std::error;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::fmt;
-use std::sync::{Arc, Mutex};
 
-pub trait Peripheral: Send + Sync {
-    fn new() -> Self
-    where
-        Self: Sized;
-    fn property_name(&self, id: usize) -> Result<&CStr>;
-    fn property_value(&self, id: usize) -> Result<Value>;
-    fn property_set_value(&self, id: usize, value: &Value) -> Result<()>;
+use libc::{c_char, c_int, size_t};
+
+#[repr(C)]
+pub struct Peripheral {
+    _private: [u8; 0],
 }
 
-/// A property is a value that may be read from or set on a peripheral.
-///
-/// The set of all property values of a peripheral represent all that is known to the user about
-/// the peripheral's state.
+#[repr(C)]
+pub struct VTable {
+    pub peripheral_new: extern "C" fn() -> *mut Peripheral,
+    pub peripheral_free: extern "C" fn(*mut Peripheral),
+    pub property_name: extern "C" fn(peripheral: *const Peripheral, id: size_t) -> *const c_char,
+    pub property_value:
+        extern "C" fn(peripheral: *const Peripheral, id: size_t, value: *mut Value) -> c_int,
+    pub set_property_value:
+        extern "C" fn(peripheral: *mut Peripheral, id: size_t, value: *const Value) -> c_int,
+}
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct Property {
     pub name: CString,
-    pub value: Arc<Mutex<Value>>,
+    pub value: Value,
 }
 
 impl Eq for Property {}
@@ -40,13 +43,11 @@ impl PartialEq for Property {
     }
 }
 
-/// A value represents the current state of a property.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[repr(C)]
 pub enum Value {
-    Integer(i64),
+    Int(i64),
     Float(f64),
-    String(String),
 }
 
 pub type Result<T> = std::result::Result<T, PropertyError>;
@@ -97,11 +98,11 @@ mod tests {
     fn properties_with_the_same_name_and_same_values_are_equal() {
         let prop1_left = Property {
             name: CString::new("prop1").unwrap(),
-            value: Arc::new(Mutex::new(Value::Integer(0))),
+            value: Value::Int(0),
         };
         let prop1_right = Property {
             name: CString::new("prop1").unwrap(),
-            value: Arc::new(Mutex::new(Value::Integer(0))),
+            value: Value::Int(0),
         };
 
         assert_eq!(prop1_left, prop1_right);
@@ -111,11 +112,11 @@ mod tests {
     fn properties_with_the_same_name_and_different_values_are_equal() {
         let prop1_left = Property {
             name: CString::new("prop1").unwrap(),
-            value: Arc::new(Mutex::new(Value::Integer(0))),
+            value: Value::Int(0),
         };
         let prop1_right = Property {
             name: CString::new("prop1").unwrap(),
-            value: Arc::new(Mutex::new(Value::Integer(1))),
+            value: Value::Int(1),
         };
 
         assert_eq!(prop1_left, prop1_right);
@@ -125,11 +126,11 @@ mod tests {
     fn properties_with_different_names_are_not_equal() {
         let prop1 = Property {
             name: CString::new("prop1").unwrap(),
-            value: Arc::new(Mutex::new(Value::Integer(0))),
+            value: Value::Int(0),
         };
         let prop2 = Property {
             name: CString::new("prop2").unwrap(),
-            value: Arc::new(Mutex::new(Value::Integer(0))),
+            value: Value::Int(0),
         };
 
         assert_ne!(prop1, prop2);
