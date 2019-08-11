@@ -17,6 +17,10 @@
 	    "description": "The type of the attribute's value",
 	    "type": "string",
 	    "enum": ["integer", "float"]
+	},
+	"value": {
+	    "description": "The attribute's value",
+	    "type": "number"
 	}
     },
     "required": [ "id", "name", "variant" ]

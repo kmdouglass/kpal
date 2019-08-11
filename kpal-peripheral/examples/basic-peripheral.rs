@@ -5,22 +5,22 @@ use std::ptr;
 use libc::{c_char, c_int, size_t};
 
 use kpal_peripheral::constants::{PERIPHERAL_ERR, PERIPHERAL_OK};
-use kpal_peripheral::{Action, Peripheral, Property, PropertyError, Result, VTable, Value};
+use kpal_peripheral::{Action, Attribute, AttributeError, Peripheral, Result, VTable, Value};
 
 #[repr(C)]
 struct Basic {
-    props: Vec<Property>,
+    props: Vec<Attribute>,
 }
 
 impl Basic {
     fn new() -> Basic {
         Basic {
             props: vec![
-                Property {
+                Attribute {
                     name: CString::new("x").expect("Error creating CString"),
                     value: Value::Float(0.0),
                 },
-                Property {
+                Attribute {
                     name: CString::new("y").expect("Error creating CString"),
                     value: Value::Int(0),
                 },
@@ -28,38 +28,38 @@ impl Basic {
         }
     }
 
-    fn property_name(&self, id: usize) -> Result<&CStr> {
+    fn attribute_name(&self, id: usize) -> Result<&CStr> {
         match self.props.get(id) {
-            Some(property) => Ok(&property.name),
-            None => Err(PropertyError::new(
+            Some(attribute) => Ok(&attribute.name),
+            None => Err(AttributeError::new(
                 Action::Get,
-                &format!("Property at index {} does not exist.", id),
+                &format!("Attribute at index {} does not exist.", id),
             )),
         }
     }
 
-    fn property_value(&self, id: usize) -> Result<Value> {
-        let property = self.props.get(id).ok_or_else(|| {
-            PropertyError::new(
+    fn attribute_value(&self, id: usize) -> Result<Value> {
+        let attribute = self.props.get(id).ok_or_else(|| {
+            AttributeError::new(
                 Action::Get,
-                &format!("Property at index {} does not exist.", id),
+                &format!("Attribute at index {} does not exist.", id),
             )
         })?;
 
-        Ok(property.value.clone())
+        Ok(attribute.value.clone())
     }
 
-    /// Sets the value of the property given by the id.
-    fn property_set_value(&mut self, id: usize, value: &Value) -> Result<()> {
+    /// Sets the value of the attribute given by the id.
+    fn attribute_set_value(&mut self, id: usize, value: &Value) -> Result<()> {
         use Value::*;
 
         let current_value = &mut self
             .props
             .get_mut(id)
             .ok_or_else(|| {
-                PropertyError::new(
+                AttributeError::new(
                     Action::Get,
-                    &format!("Property at index {} does not exist.", id),
+                    &format!("Attribute at index {} does not exist.", id),
                 )
             })?
             .value;
@@ -69,9 +69,9 @@ impl Basic {
                 *current_value = (*value).clone();
                 Ok(())
             }
-            _ => Err(PropertyError::new(
+            _ => Err(AttributeError::new(
                 Action::Set,
-                &format!("Could not set property {}", id),
+                &format!("Could not set attribute {}", id),
             )),
         }
     }
@@ -82,9 +82,9 @@ pub extern "C" fn vtable() -> VTable {
     VTable {
         peripheral_new: peripheral_new,
         peripheral_free: peripheral_free,
-        property_name: property_name,
-        property_value: property_value,
-        set_property_value: set_property_value,
+        attribute_name: attribute_name,
+        attribute_value: attribute_value,
+        set_attribute_value: set_attribute_value,
     }
 }
 
@@ -103,18 +103,18 @@ extern "C" fn peripheral_free(peripheral: *mut Peripheral) {
     }
 }
 
-extern "C" fn property_name(peripheral: *const Peripheral, id: size_t) -> *const c_char {
+extern "C" fn attribute_name(peripheral: *const Peripheral, id: size_t) -> *const c_char {
     assert!(!peripheral.is_null());
     let peripheral = peripheral as *const Box<Basic>;
     unsafe {
-        match (*peripheral).property_name(id) {
+        match (*peripheral).attribute_name(id) {
             Ok(name) => name.as_ptr(),
             Err(_) => return ptr::null(),
         }
     }
 }
 
-extern "C" fn property_value(
+extern "C" fn attribute_value(
     peripheral: *const Peripheral,
     id: size_t,
     value: *mut Value,
@@ -123,7 +123,7 @@ extern "C" fn property_value(
     let peripheral = peripheral as *const Box<Basic>;
     let value = value as *mut Value;
     unsafe {
-        match (*peripheral).property_value(id) {
+        match (*peripheral).attribute_value(id) {
             Ok(new_value) => *value = new_value,
             Err(_) => return PERIPHERAL_ERR,
         };
@@ -132,7 +132,7 @@ extern "C" fn property_value(
     PERIPHERAL_OK
 }
 
-extern "C" fn set_property_value(
+extern "C" fn set_attribute_value(
     peripheral: *mut Peripheral,
     id: size_t,
     value: *const Value,
@@ -144,7 +144,7 @@ extern "C" fn set_property_value(
     let value = value as *const Value;
 
     unsafe {
-        match (*peripheral).property_set_value(id, &*value) {
+        match (*peripheral).attribute_set_value(id, &*value) {
             Ok(_) => PERIPHERAL_OK,
             Err(_) => PERIPHERAL_ERR,
         }
@@ -156,28 +156,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn set_property_value() {
+    fn set_attribute_value() {
         let mut peripheral = Basic::new();
         let new_values = vec![Value::Float(3.14), Value::Int(4)];
 
-        // Test setting each property to the new value
+        // Test setting each attribute to the new value
         for (i, value) in new_values.into_iter().enumerate() {
-            peripheral.property_set_value(i, &value).unwrap();
+            peripheral.attribute_set_value(i, &value).unwrap();
             let actual = &peripheral.props[i].value;
             assert_eq!(
                 value, *actual,
-                "Expected property value to be {:?} but it was {:?}",
+                "Expected attribute value to be {:?} but it was {:?}",
                 value, *actual
             )
         }
     }
 
     #[test]
-    fn set_property_wrong_variant() {
+    fn set_attribute_wrong_variant() {
         let mut peripheral = Basic::new();
         let new_value = Value::Float(42.0);
 
-        let result = peripheral.property_set_value(1, &new_value);
+        let result = peripheral.attribute_set_value(1, &new_value);
         match result {
             Ok(_) => panic!("Expected different value variants."),
             Err(_) => (),

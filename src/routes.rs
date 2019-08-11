@@ -3,8 +3,9 @@ use redis;
 use rouille::{router, Request, Response};
 
 use crate::handlers;
+use crate::models::Library;
 
-pub fn routes(request: &Request, db: &redis::Connection) -> Response {
+pub fn routes(request: &Request, db: &redis::Connection, libs: &Vec<Library>) -> Response {
     router!(request,
 
             // GET /
@@ -26,32 +27,39 @@ pub fn routes(request: &Request, db: &redis::Connection) -> Response {
             // GET /api/v0/libraries/{id}
             (GET) (/api/v0/libraries/{id: usize}) => {
                 log::info!("GET /api/v0/libraries/{}", id);
-                handlers::get_libraries_id(&db, id).unwrap_or_else(|e| {
+                handlers::get_library(&db, id).unwrap_or_else(|e| {
                     log::error!("{}", e);
                     Response::empty_404()
                 })
             },
-    /*
-            // GET /peripherals
-            (GET) (/peripherals) => {
-                // Returns a list of all peripherals currently registered with the daemon.
-                //
-                // peripherals are devices or processes that may be controlled by KPAL.
-                Response::empty_404()
+
+            // GET /api/v0/peripherals
+            (GET) (/api/v0/peripherals) => {
+                log::info!("GET /api/v0/peripherals");
+                handlers::get_peripherals(&db).unwrap_or_else(|e| {
+                    log::error!("{}", e);
+                    Response::empty_404()
+                })
+            },
+
+            // POST /api/v0/peripherals
+            (POST) (/api/v0/peripherals) => {
+                log::info!("POST /api/v0/peripherals");
+                handlers::post_peripherals(&request, &db, &libs).unwrap_or_else(|e| {
+                    log::error!("{}", e);
+                    Response::empty_400()
+                })
             },
 
             // GET /peripherals/{id}
-            (GET) (/peripherals/{id: usize}) => {
-                // Returns a single peripheral.
-                Response::empty_404()
+            (GET) (/api/v0/peripherals/{id: usize}) => {
+                log::info!("GET /api/v0/peripherals/{}", id);
+                handlers::get_peripheral(&db, id).unwrap_or_else(|e| {
+                    log::error!("{}", e);
+                    Response::empty_404()
+                })
             },
 
-            // PATCH /peripherals/{id}
-            (PATCH) (/peripherals/{id: usize}) => {
-                // Updates the state of a given peripheral.
-                Response::empty_404()
-            },
-    */
             _ => Response::empty_404()
-        )
+    )
 }

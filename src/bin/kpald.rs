@@ -12,7 +12,7 @@ fn main() {
     env_logger::init();
     let args = Cli::from_args();
 
-    let db = match init(&args) {
+    let (db, libs) = match init(&args) {
         Ok(x) => x,
         Err(e) => {
             log::error!("{}", e);
@@ -27,7 +27,7 @@ fn main() {
             Err(_) => return Response::text("Internal server error (500)").with_status_code(500),
         };
 
-        let response = routes(&request, &db);
+        let response = routes(&request, &db, &libs);
 
         response
     });

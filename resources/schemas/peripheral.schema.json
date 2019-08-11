@@ -13,9 +13,9 @@
 	    "description": "The name of the peripheral",
 	    "type": "string"
 	},
-	"library": {
-	    "description": "The peripheral's shared library file",
-	    "$ref": "#/library.schema.json"
+	"library_id": {
+	    "description": "The ID of the peripheral's shared library file",
+	    "type": "integer"
 	},
 	"attributes" : {
 	    "description": "An attribute is a value that partly defines the state of a peripheral",
@@ -26,5 +26,5 @@
 	    "default": []
 	}
     },
-    "required": [ "id", "name", "library", "attributes" ]
+    "required": [ "id", "name", "library_id", "attributes" ]
 }
