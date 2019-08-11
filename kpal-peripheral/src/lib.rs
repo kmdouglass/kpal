@@ -43,6 +43,7 @@ impl PartialEq for Attribute {
     }
 }
 
+// TODO Change inner datatypes to be C-compatible
 #[derive(Clone, Debug, PartialEq)]
 #[repr(C)]
 pub enum Value {
