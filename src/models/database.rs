@@ -78,9 +78,8 @@ pub trait Query {
             .query(db)
             .map_err(|e| DatabaseError { side: Box::new(e) })?;
 
-        let json: Vec<String> = redis::cmd("JSON.MGET")
+        let json: Vec<String> = redis::cmd("MGET")
             .arg(keys)
-            .arg(".")
             .query(db)
             .map_err(|e| DatabaseError { side: Box::new(e) })?;
 
@@ -100,9 +99,8 @@ pub trait Query {
     where
         Self: DeserializeOwned + Sized,
     {
-        let result: Option<String> = redis::cmd("JSON.GET")
+        let result: Option<String> = redis::cmd("GET")
             .arg(format!("{}:{}", Self::key(), id))
-            .arg(".")
             .query(db)
             .map_err(|e| DatabaseError { side: Box::new(e) })?;
 
@@ -121,15 +119,16 @@ pub trait Query {
     {
         let json = serde_json::to_string(&self).map_err(|e| DatabaseError { side: Box::new(e) })?;
 
-        redis::cmd("JSON.SET")
+        redis::cmd("SET")
             .arg(format!("{}:{}", Self::key(), self.id()))
-            .arg(".")
             .arg(json)
             .query(db)
             .map_err(|e| DatabaseError { side: Box::new(e) })?;
 
         Ok(())
     }
+
+    fn set_id(&mut self, id: usize);
 }
 
 type Result<T> = std::result::Result<T, DatabaseError>;

@@ -7,7 +7,7 @@ use rouille::input::json::json_input;
 use rouille::{Request, Response};
 
 use crate::models::database::{Count, Query};
-use crate::models::{Library, Peripheral};
+use crate::models::{Attribute, Library, Peripheral};
 
 pub fn get_libraries(db: &redis::Connection) -> Result<Response> {
     let result: Vec<Library> =
@@ -51,7 +51,7 @@ pub fn post_peripherals(
     let mut periph: Peripheral =
         json_input(&request).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
 
-    let lib = match libs.get(periph.library_id) {
+    let lib = match libs.get(periph.library_id()) {
         Some(id) => id,
         None => {
             let mut response = Response::text("Library does not exist.\n");
@@ -60,9 +60,10 @@ pub fn post_peripherals(
         }
     };
 
-    periph.id =
+    let id: usize =
         Peripheral::count_and_incr(&db).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
 
+    periph.set_id(id);
     periph
         .set(&db)
         .map_err(|e| RequestHandlerError { side: Box::new(e) })?;
@@ -71,9 +72,40 @@ pub fn post_peripherals(
     response.status_code = 201;
     response.headers.push((
         "Location".into(),
-        format!("/peripherals/{}", &periph.id).into(),
+        format!("/api/v0/peripherals/{}", &periph.id()).into(),
     ));
     Ok(response)
+}
+
+pub fn get_peripheral_attribute(
+    db: &redis::Connection,
+    id: usize,
+    attr_id: usize,
+) -> Result<Response> {
+    let peripheral: Peripheral = if let Some(peripheral) =
+        Peripheral::get(&db, id).map_err(|e| RequestHandlerError { side: Box::new(e) })?
+    {
+        peripheral
+    } else {
+        return Ok(Response::empty_404());
+    };
+
+    let result: Option<&Attribute> = peripheral.attributes().get(attr_id);
+
+    match result {
+        Some(result) => Ok(Response::json(result)),
+        None => Ok(Response::empty_404()),
+    }
+}
+
+pub fn get_peripheral_attributes(db: &redis::Connection, id: usize) -> Result<Response> {
+    let result: Option<Peripheral> =
+        Peripheral::get(&db, id).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
+
+    match result {
+        Some(result) => Ok(Response::json(result.attributes())),
+        None => Ok(Response::empty_404()),
+    }
 }
 
 pub type Result<T> = std::result::Result<T, RequestHandlerError>;

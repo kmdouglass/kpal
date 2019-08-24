@@ -23,5 +23,5 @@
 	    "type": "number"
 	}
     },
-    "required": [ "id", "name", "variant" ]
+    "required": [ "id", "name", "variant", "value" ]
 }

@@ -6,12 +6,21 @@ use database::{Count, Query};
 pub mod database;
 
 #[derive(Deserialize, Serialize)]
-pub struct Library {
-    pub id: usize,
-    pub name: String,
+#[serde(tag = "variant")]
+pub enum Attribute {
+    #[serde(rename(serialize = "integer", deserialize = "integer"))]
+    Int { id: usize, name: String, value: i64 },
 
-    // TODO Change `default = "none"` to `default` because Option is Default
-    #[serde(skip, default = "none")]
+    #[serde(rename(serialize = "float", deserialize = "float"))]
+    Float { id: usize, name: String, value: f64 },
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct Library {
+    id: usize,
+    name: String,
+
+    #[serde(skip)]
     library: Option<Dll>,
 }
 
@@ -29,16 +38,34 @@ impl Query for Library {
     fn key() -> &'static str {
         "libraries"
     }
+
+    fn set_id(&mut self, id: usize) {
+        self.id = id;
+    }
 }
 
 impl Count for Library {}
 
 #[derive(Deserialize, Serialize)]
 pub struct Peripheral {
+    library_id: usize,
+    name: String,
+
     #[serde(default)]
-    pub id: usize,
-    pub library_id: usize,
-    pub name: String,
+    attributes: Vec<Attribute>,
+
+    #[serde(default)]
+    id: usize,
+}
+
+impl Peripheral {
+    pub fn attributes(&self) -> &Vec<Attribute> {
+        &self.attributes
+    }
+
+    pub fn library_id(&self) -> usize {
+        self.library_id
+    }
 }
 
 impl Query for Peripheral {
@@ -49,10 +76,10 @@ impl Query for Peripheral {
     fn key() -> &'static str {
         "peripherals"
     }
+
+    fn set_id(&mut self, id: usize) {
+        self.id = id;
+    }
 }
 
 impl Count for Peripheral {}
-
-fn none() -> Option<Dll> {
-    None
-}
