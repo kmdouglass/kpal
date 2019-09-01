@@ -4,13 +4,14 @@ pub mod constants {
     pub const PERIPHERAL_OK: c_int = 0;
     pub const PERIPHERAL_ERR: c_int = -1;
 }
+pub mod utils;
 
 use std::cmp::{Eq, PartialEq};
 use std::error;
 use std::ffi::CString;
 use std::fmt;
 
-use libc::{c_char, c_int, size_t};
+use libc::{c_int, c_uchar, size_t};
 
 #[repr(C)]
 pub struct Peripheral {
@@ -21,7 +22,12 @@ pub struct Peripheral {
 pub struct VTable {
     pub peripheral_new: extern "C" fn() -> *mut Peripheral,
     pub peripheral_free: extern "C" fn(*mut Peripheral),
-    pub attribute_name: extern "C" fn(peripheral: *const Peripheral, id: size_t) -> *const c_char,
+    pub attribute_name: extern "C" fn(
+        peripheral: *const Peripheral,
+        id: size_t,
+        buffer: *mut c_uchar,
+        length: size_t,
+    ) -> c_int,
     pub attribute_value:
         extern "C" fn(peripheral: *const Peripheral, id: size_t, value: *mut Value) -> c_int,
     pub set_attribute_value:
