@@ -1,10 +1,10 @@
 use std::boxed::Box;
 use std::ffi::{CStr, CString};
-use std::ptr;
 
-use libc::{c_char, c_int, size_t};
+use libc::{c_int, c_uchar, size_t};
 
 use kpal_peripheral::constants::{PERIPHERAL_ERR, PERIPHERAL_OK};
+use kpal_peripheral::utils::copy_string;
 use kpal_peripheral::{Action, Attribute, AttributeError, Peripheral, Result, VTable, Value};
 
 #[repr(C)]
@@ -103,13 +103,23 @@ extern "C" fn peripheral_free(peripheral: *mut Peripheral) {
     }
 }
 
-extern "C" fn attribute_name(peripheral: *const Peripheral, id: size_t) -> *const c_char {
+extern "C" fn attribute_name(
+    peripheral: *const Peripheral,
+    id: size_t,
+    buffer: *mut c_uchar,
+    length: size_t,
+) -> c_int {
     assert!(!peripheral.is_null());
     let peripheral = peripheral as *const Box<Basic>;
     unsafe {
-        match (*peripheral).attribute_name(id) {
-            Ok(name) => name.as_ptr(),
-            Err(_) => return ptr::null(),
+        let name: &[u8] = match (*peripheral).attribute_name(id) {
+            Ok(name) => name.to_bytes_with_nul(),
+            Err(_) => return PERIPHERAL_ERR,
+        };
+
+        match copy_string(name, buffer, length) {
+            Ok(_) => PERIPHERAL_OK,
+            Err(_) => PERIPHERAL_ERR,
         }
     }
 }
