@@ -11,7 +11,7 @@ use std::error;
 use std::ffi::CString;
 use std::fmt;
 
-use libc::{c_int, c_uchar, size_t};
+use libc::{c_double, c_int, c_long, c_uchar, size_t};
 
 #[repr(C)]
 pub struct Peripheral {
@@ -49,12 +49,11 @@ impl PartialEq for Attribute {
     }
 }
 
-// TODO Change inner datatypes to be C-compatible
 #[derive(Clone, Debug, PartialEq)]
 #[repr(C)]
 pub enum Value {
-    Int(i64),
-    Float(f64),
+    Int(c_long),
+    Float(c_double),
 }
 
 pub type Result<T> = std::result::Result<T, AttributeError>;
