@@ -80,7 +80,6 @@ impl Basic {
 #[no_mangle]
 pub extern "C" fn vtable() -> VTable {
     VTable {
-        peripheral_new: peripheral_new,
         peripheral_free: peripheral_free,
         attribute_name: attribute_name,
         attribute_value: attribute_value,
@@ -88,7 +87,7 @@ pub extern "C" fn vtable() -> VTable {
     }
 }
 
-extern "C" fn peripheral_new() -> *mut Peripheral {
+pub extern "C" fn peripheral_new() -> *mut Peripheral {
     let peripheral: Box<Basic> = Box::new(Basic::new());
     Box::into_raw(peripheral) as *mut Peripheral
 }

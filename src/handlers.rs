@@ -7,7 +7,10 @@ use rouille::input::json::json_input;
 use rouille::{Request, Response};
 
 use crate::models::database::{Count, Query};
-use crate::models::{Attribute, Library, Peripheral};
+use crate::models::Library;
+use crate::models::{Attribute, Peripheral};
+use crate::plugins::init as init_plugin;
+use crate::plugins::TSLibrary;
 
 pub fn get_libraries(db: &redis::Connection) -> Result<Response> {
     let result: Vec<Library> =
@@ -46,19 +49,22 @@ pub fn get_peripherals(db: &redis::Connection) -> Result<Response> {
 pub fn post_peripherals(
     request: &Request,
     db: &redis::Connection,
-    libs: &Vec<Library>,
+    libs: &Vec<TSLibrary>,
 ) -> Result<Response> {
     let mut periph: Peripheral =
         json_input(&request).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
 
     let lib = match libs.get(periph.library_id()) {
-        Some(id) => id,
+        // Bump the reference count on the Arc that wraps this library
+        Some(lib) => lib.clone(),
         None => {
             let mut response = Response::text("Library does not exist.\n");
             response.status_code = 400;
             return Ok(response);
         }
     };
+
+    init_plugin(&mut periph, db, lib).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
 
     let id: usize =
         Peripheral::count_and_incr(&db).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
