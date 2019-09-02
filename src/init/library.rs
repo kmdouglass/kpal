@@ -4,18 +4,20 @@ use std::fmt;
 use std::fs::read_dir;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use libloading::Library as Dll;
 use log;
 
 use crate::models::Library;
+use crate::plugins::TSLibrary;
 
 /// Initializes the process of finding and loading peripheral libraries.
 ///
 /// # Arguments
 ///
 /// * `dir` - A path to a directory to search for peripheral library files.
-pub fn init(dir: &Path) -> Result<Vec<Library>, LibraryInitError> {
+pub fn init(dir: &Path) -> Result<Vec<TSLibrary>, LibraryInitError> {
     log::info!(
         "Searching for peripheral library files inside the following directory: {:?}",
         dir
@@ -76,7 +78,7 @@ fn find_peripherals(dir: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
 /// # Arguments
 ///
 /// * `lib_paths` - A vector of `PathBuf`s pointing to library files to load.
-fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<Library>> {
+fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
     log::debug!("Loading peripherals...");
     let (mut libraries, mut counter) = (Vec::new(), 0usize);
 
@@ -101,7 +103,11 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<Library>> {
             }
         };
 
-        libraries.push(Library::new(counter, file_name, Some(lib)));
+        libraries.push(Arc::new(Mutex::new(Library::new(
+            counter,
+            file_name,
+            Some(lib),
+        ))));
 
         counter += 1;
     }

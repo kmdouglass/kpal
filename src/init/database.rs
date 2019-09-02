@@ -11,11 +11,12 @@ use url::Url;
 use crate::constants::DATABASE_INDEX;
 use crate::models::database::{init as model_init, Count, Query};
 use crate::models::Library;
+use crate::plugins::TSLibrary;
 
 // TODO Provide a connection pool rather than a single mutex to the database connection
 pub fn init(
     db_addr: &Url,
-    libs: &Vec<Library>,
+    libs: &Vec<TSLibrary>,
 ) -> Result<Mutex<redis::Connection>, DatabaseInitError> {
     let mut db_addr = db_addr.clone();
     db_addr.set_path(DATABASE_INDEX);
@@ -38,13 +39,16 @@ pub fn init(
     Ok(Mutex::new(connection))
 }
 
-fn libs_to_json(libs: &Vec<Library>, db: &redis::Connection) -> Result<(), DatabaseInitError> {
+fn libs_to_json(libs: &Vec<TSLibrary>, db: &redis::Connection) -> Result<(), DatabaseInitError> {
     log::info!("Writing peripheral library information to the database");
 
     let mut lib_json: String;
     for lib in libs.iter() {
+        // TODO Can the expect() be removed here? The returned error has a lifetime, so it cannot
+        // be used to create a new side effect for a DatabaseInitError
+        let lib = lib.lock().expect("Could not obtain a lock on the Library");
         lib_json =
-            serde_json::to_string(&lib).map_err(|e| DatabaseInitError { side: Box::new(e) })?;;
+            serde_json::to_string(&(*lib)).map_err(|e| DatabaseInitError { side: Box::new(e) })?;
 
         log::debug!("Writing {} to key libraries:{}", &lib_json, &lib.id());
         redis::cmd("SET")

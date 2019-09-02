@@ -28,6 +28,10 @@ impl Library {
     pub fn new(id: usize, name: String, library: Option<Dll>) -> Library {
         Library { id, name, library }
     }
+
+    pub fn dll(&self) -> &Option<Dll> {
+        &self.library
+    }
 }
 
 impl Query for Library {

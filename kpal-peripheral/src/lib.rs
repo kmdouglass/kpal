@@ -20,7 +20,6 @@ pub struct Peripheral {
 
 #[repr(C)]
 pub struct VTable {
-    pub peripheral_new: extern "C" fn() -> *mut Peripheral,
     pub peripheral_free: extern "C" fn(*mut Peripheral),
     pub attribute_name: extern "C" fn(
         peripheral: *const Peripheral,
@@ -33,6 +32,8 @@ pub struct VTable {
     pub set_attribute_value:
         extern "C" fn(peripheral: *mut Peripheral, id: size_t, value: *const Value) -> c_int,
 }
+
+pub type PeripheralNew = extern "C" fn() -> *mut Peripheral;
 
 #[derive(Debug)]
 #[repr(C)]

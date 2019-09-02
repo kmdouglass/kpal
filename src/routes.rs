@@ -3,9 +3,9 @@ use redis;
 use rouille::{router, Request, Response};
 
 use crate::handlers;
-use crate::models::Library;
+use crate::plugins::TSLibrary;
 
-pub fn routes(request: &Request, db: &redis::Connection, libs: &Vec<Library>) -> Response {
+pub fn routes(request: &Request, db: &redis::Connection, libs: &Vec<TSLibrary>) -> Response {
     router!(request,
 
             // GET /
