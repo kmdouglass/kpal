@@ -18,6 +18,7 @@ pub struct Peripheral {
     _private: [u8; 0],
 }
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct VTable {
     pub peripheral_free: extern "C" fn(*mut Peripheral),
@@ -34,6 +35,7 @@ pub struct VTable {
 }
 
 pub type PeripheralNew = extern "C" fn() -> *mut Peripheral;
+pub type VTableNew = extern "C" fn() -> VTable;
 
 #[derive(Debug)]
 #[repr(C)]
