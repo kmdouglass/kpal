@@ -12,8 +12,8 @@ use super::{Library, Peripheral};
 ///
 /// This method should be updated each time a new model is added to the Models module.
 pub fn init(db: &redis::Connection) -> Result<()> {
-    Library::init(&db)?;
-    Peripheral::init(&db)?;
+    Library::init_count(&db)?;
+    Peripheral::init_count(&db)?;
 
     Ok(())
 }
@@ -53,7 +53,7 @@ pub trait Count {
         Ok(())
     }
 
-    fn init(db: &redis::Connection) -> Result<()>
+    fn init_count(db: &redis::Connection) -> Result<()>
     where
         Self: Query,
     {
@@ -129,6 +129,20 @@ pub trait Query {
     }
 
     fn set_id(&mut self, id: usize);
+}
+
+pub trait Queue {
+    fn rpop(&self, db: &redis::Connection) -> Result<Option<String>>
+    where
+        Self: Query,
+    {
+        let msg: Option<String> = redis::cmd("RPOP")
+            .arg(format!("queues:{}:{}", Self::key(), self.id()))
+            .query(db)
+            .map_err(|e| DatabaseError { side: Box::new(e) })?;
+
+        Ok(msg)
+    }
 }
 
 type Result<T> = std::result::Result<T, DatabaseError>;

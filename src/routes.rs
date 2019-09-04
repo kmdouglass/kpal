@@ -5,7 +5,12 @@ use rouille::{router, Request, Response};
 use crate::handlers;
 use crate::plugins::TSLibrary;
 
-pub fn routes(request: &Request, db: &redis::Connection, libs: &Vec<TSLibrary>) -> Response {
+pub fn routes(
+    request: &Request,
+    client: &redis::Client,
+    db: &redis::Connection,
+    libs: &Vec<TSLibrary>,
+) -> Response {
     router!(request,
 
             // GET /
@@ -36,7 +41,7 @@ pub fn routes(request: &Request, db: &redis::Connection, libs: &Vec<TSLibrary>) 
             // POST /api/v0/peripherals
             (POST) (/api/v0/peripherals) => {
                 log::info!("POST /api/v0/peripherals");
-                handlers::post_peripherals(&request, &db, &libs).unwrap_or_else(log_404)
+                handlers::post_peripherals(&request, &client, &db, &libs).unwrap_or_else(log_404)
             },
 
             // GET /api/v0/peripherals/{id}

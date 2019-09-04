@@ -17,13 +17,15 @@ use crate::plugins::TSLibrary;
 pub fn init(
     db_addr: &Url,
     libs: &Vec<TSLibrary>,
-) -> Result<Mutex<redis::Connection>, DatabaseInitError> {
+) -> Result<(redis::Client, Mutex<redis::Connection>), DatabaseInitError> {
     let mut db_addr = db_addr.clone();
     db_addr.set_path(DATABASE_INDEX);
     log::info!("Initializing the database connection to {}", db_addr);
 
-    let connection = redis::Client::open(db_addr)
-        .map_err(|e| DatabaseInitError { side: Box::new(e) })?
+    let client =
+        redis::Client::open(db_addr).map_err(|e| DatabaseInitError { side: Box::new(e) })?;
+
+    let connection = client
         .get_connection()
         .map_err(|e| DatabaseInitError { side: Box::new(e) })?;
 
@@ -36,7 +38,7 @@ pub fn init(
     model_init(&connection).map_err(|e| DatabaseInitError { side: Box::new(e) })?;
     libs_to_json(libs, &connection)?;
 
-    Ok(Mutex::new(connection))
+    Ok((client, Mutex::new(connection)))
 }
 
 fn libs_to_json(libs: &Vec<TSLibrary>, db: &redis::Connection) -> Result<(), DatabaseInitError> {
