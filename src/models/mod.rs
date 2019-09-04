@@ -1,11 +1,11 @@
 use libloading::Library as Dll;
 use serde::{Deserialize, Serialize};
 
-use database::{Count, Query};
+use database::{Count, Query, Queue};
 
 pub mod database;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(tag = "variant")]
 pub enum Attribute {
     #[serde(rename(serialize = "integer", deserialize = "integer"))]
@@ -50,7 +50,7 @@ impl Query for Library {
 
 impl Count for Library {}
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct Peripheral {
     library_id: usize,
     name: String,
@@ -87,3 +87,5 @@ impl Query for Peripheral {
 }
 
 impl Count for Peripheral {}
+
+impl Queue for Peripheral {}

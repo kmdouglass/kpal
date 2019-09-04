@@ -48,6 +48,7 @@ pub fn get_peripherals(db: &redis::Connection) -> Result<Response> {
 
 pub fn post_peripherals(
     request: &Request,
+    client: &redis::Client,
     db: &redis::Connection,
     libs: &Vec<TSLibrary>,
 ) -> Result<Response> {
@@ -64,12 +65,13 @@ pub fn post_peripherals(
         }
     };
 
-    init_plugin(&mut periph, db, lib).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
-
     let id: usize =
         Peripheral::count_and_incr(&db).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
-
     periph.set_id(id);
+
+    init_plugin(&mut periph, client, lib).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
+
+    // If we made it this far then everything initialized correctly, so finalize the peripheral
     periph
         .set(&db)
         .map_err(|e| RequestHandlerError { side: Box::new(e) })?;

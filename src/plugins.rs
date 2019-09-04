@@ -9,6 +9,7 @@ use libloading::Symbol;
 use kpal_peripheral::Peripheral as Plugin;
 use kpal_peripheral::{PeripheralNew, VTable, VTableNew};
 
+use crate::models::database::Queue;
 use crate::models::{Library, Peripheral};
 
 /// A thread safe version of a [Library](../models/struct.Library.html) instance.
@@ -29,38 +30,49 @@ pub type TSLibrary = Arc<Mutex<Library>>;
 /// only ever be owned by this thread by design.
 #[derive(Debug)]
 struct PluginManager {
-    object_p: *mut Plugin,
+    object: *mut Plugin,
     vtable: VTable,
 }
 
 impl Drop for PluginManager {
     fn drop(&mut self) {
-        (self.vtable.peripheral_free)(self.object_p);
+        (self.vtable.peripheral_free)(self.object);
     }
 }
 
 unsafe impl Send for PluginManager {}
 
 pub fn init(
-    _peripheral: &mut Peripheral,
-    _db: &redis::Connection,
+    peripheral: &mut Peripheral,
+    client: &redis::Client,
     lib: TSLibrary,
 ) -> std::result::Result<(), PluginInitError> {
-    let peripheral_p: *mut Plugin =
+    let plugin: *mut Plugin =
         unsafe { peripheral_new(lib.clone()).map_err(|e| PluginInitError { side: Box::new(e) })? };
-
     let vtable: VTable =
         unsafe { peripheral_vtable(lib).map_err(|e| PluginInitError { side: Box::new(e) })? };
-
     let plugin = PluginManager {
-        object_p: peripheral_p,
+        object: plugin,
         vtable: vtable,
     };
 
+    let db = client
+        .get_connection()
+        .map_err(|e| PluginInitError { side: Box::new(e) })?;
+    let peripheral = peripheral.clone();
+
     thread::spawn(move || -> Result<(), PeripheralThreadError> {
+        println!("Inside plugin loop with plugin: {:?}", plugin);
         loop {
-            println!("inside plugin loop with plugin: {:?}", plugin);
-            thread::sleep(Duration::from_secs(5));
+            let msg = match peripheral.rpop(&db).map_err(|_| PeripheralThreadError {})? {
+                Some(msg) => msg,
+                None => {
+                    println!("No message. Sleeping...");
+                    thread::sleep(Duration::from_secs(5));
+                    continue;
+                }
+            };
+            println!("Message: {}", msg);
         }
     });
 

@@ -48,11 +48,12 @@ pub struct Cli {
     pub peripheral_dir: PathBuf,
 }
 
-pub fn init(args: &Cli) -> Result<(Mutex<redis::Connection>, Vec<TSLibrary>)> {
+pub fn init(args: &Cli) -> Result<(redis::Client, Mutex<redis::Connection>, Vec<TSLibrary>)> {
     let libs = library::init(&args.peripheral_dir).map_err(|e| InitError { side: Box::new(e) })?;
-    let db = database::init(&args.db_addr, &libs).map_err(|e| InitError { side: Box::new(e) })?;
+    let (client, db) =
+        database::init(&args.db_addr, &libs).map_err(|e| InitError { side: Box::new(e) })?;
 
-    Ok((db, libs))
+    Ok((client, db, libs))
 }
 
 pub type Result<T> = std::result::Result<T, InitError>;
