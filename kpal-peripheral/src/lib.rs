@@ -1,10 +1,15 @@
 pub mod constants {
     use libc::c_int;
 
+    pub const LIBRARY_OK: c_int = 0;
+    pub const LIBRARY_ERR: c_int = 1;
+
     pub const PERIPHERAL_OK: c_int = 0;
-    pub const PERIPHERAL_ERR: c_int = -1;
+    pub const PERIPHERAL_ERR: c_int = 1;
+    pub const PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST: c_int = 2;
+    pub const PERIPHERAL_COULD_NOT_SET_ATTRIBUTE: c_int = 3;
 }
-pub mod utils;
+pub mod strings;
 
 use std::cmp::{Eq, PartialEq};
 use std::error;
@@ -13,6 +18,7 @@ use std::fmt;
 
 use libc::{c_double, c_int, c_long, c_uchar, size_t};
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct Peripheral {
     _private: [u8; 0],
@@ -65,15 +71,21 @@ pub type Result<T> = std::result::Result<T, AttributeError>;
 #[derive(Debug)]
 pub struct AttributeError {
     action: Action,
+    error_code: c_int,
     message: String,
 }
 
 impl AttributeError {
-    pub fn new(action: Action, message: &str) -> AttributeError {
+    pub fn new(action: Action, error_code: c_int, message: &str) -> AttributeError {
         AttributeError {
             action: action,
+            error_code: error_code,
             message: String::from(message),
         }
+    }
+
+    pub fn error_code(&self) -> c_int {
+        self.error_code
     }
 }
 

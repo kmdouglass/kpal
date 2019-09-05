@@ -5,7 +5,7 @@ use database::{Count, Query, Queue};
 
 pub mod database;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Debug, Serialize)]
 #[serde(tag = "variant")]
 pub enum Attribute {
     #[serde(rename(serialize = "integer", deserialize = "integer"))]
@@ -15,7 +15,7 @@ pub enum Attribute {
     Float { id: usize, name: String, value: f64 },
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Debug, Serialize)]
 pub struct Library {
     id: usize,
     name: String,
@@ -50,7 +50,7 @@ impl Query for Library {
 
 impl Count for Library {}
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Debug, Serialize)]
 pub struct Peripheral {
     library_id: usize,
     name: String,
@@ -69,6 +69,10 @@ impl Peripheral {
 
     pub fn library_id(&self) -> usize {
         self.library_id
+    }
+
+    pub fn set_attributes(&mut self, attributes: Vec<Attribute>) {
+        self.attributes = attributes;
     }
 }
 
