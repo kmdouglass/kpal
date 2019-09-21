@@ -3,10 +3,11 @@ use std::ffi::{CStr, CString};
 
 use libc::{c_int, c_uchar, size_t};
 
-use kpal_peripheral::constants::{PERIPHERAL_ERR, PERIPHERAL_OK};
-use kpal_peripheral::utils::copy_string;
+use kpal_peripheral::constants::*;
+use kpal_peripheral::strings::copy_string;
 use kpal_peripheral::{Action, Attribute, AttributeError, Peripheral, Result, VTable, Value};
 
+#[derive(Debug)]
 #[repr(C)]
 struct Basic {
     props: Vec<Attribute>,
@@ -33,6 +34,7 @@ impl Basic {
             Some(attribute) => Ok(&attribute.name),
             None => Err(AttributeError::new(
                 Action::Get,
+                PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST,
                 &format!("Attribute at index {} does not exist.", id),
             )),
         }
@@ -42,6 +44,7 @@ impl Basic {
         let attribute = self.props.get(id).ok_or_else(|| {
             AttributeError::new(
                 Action::Get,
+                PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST,
                 &format!("Attribute at index {} does not exist.", id),
             )
         })?;
@@ -59,6 +62,7 @@ impl Basic {
             .ok_or_else(|| {
                 AttributeError::new(
                     Action::Get,
+                    PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST,
                     &format!("Attribute at index {} does not exist.", id),
                 )
             })?
@@ -71,6 +75,7 @@ impl Basic {
             }
             _ => Err(AttributeError::new(
                 Action::Set,
+                PERIPHERAL_COULD_NOT_SET_ATTRIBUTE,
                 &format!("Could not set attribute {}", id),
             )),
         }
@@ -78,18 +83,28 @@ impl Basic {
 }
 
 #[no_mangle]
+pub extern "C" fn library_init() -> c_int {
+    env_logger::init();
+    LIBRARY_OK
+}
+
+#[no_mangle]
 pub extern "C" fn peripheral_vtable() -> VTable {
-    VTable {
+    let vtable = VTable {
         peripheral_free: peripheral_free,
         attribute_name: attribute_name,
         attribute_value: attribute_value,
         set_attribute_value: set_attribute_value,
-    }
+    };
+
+    log::debug!("Initialized VTable: {:?}", vtable);
+    vtable
 }
 
 #[no_mangle]
 pub extern "C" fn peripheral_new() -> *mut Peripheral {
     let peripheral: Box<Basic> = Box::new(Basic::new());
+    log::debug!("Peripheral is: {:?}", *peripheral);
     Box::into_raw(peripheral) as *mut Peripheral
 }
 
@@ -109,12 +124,13 @@ extern "C" fn attribute_name(
     buffer: *mut c_uchar,
     length: size_t,
 ) -> c_int {
+    //TODO Get rid of asserts
     assert!(!peripheral.is_null());
-    let peripheral = peripheral as *const Box<Basic>;
+    let peripheral = peripheral as *const Basic;
     unsafe {
         let name: &[u8] = match (*peripheral).attribute_name(id) {
             Ok(name) => name.to_bytes_with_nul(),
-            Err(_) => return PERIPHERAL_ERR,
+            Err(e) => return e.error_code(),
         };
 
         match copy_string(name, buffer, length) {
@@ -129,13 +145,26 @@ extern "C" fn attribute_value(
     id: size_t,
     value: *mut Value,
 ) -> c_int {
+    //TODO Get rid of asserts
     assert!(!peripheral.is_null());
-    let peripheral = peripheral as *const Box<Basic>;
-    let value = value as *mut Value;
+    let peripheral = peripheral as *const Basic;
+
     unsafe {
+        log::debug!(
+            "Received request for the value of attribute {} for peripheral: {:?}",
+            id,
+            *peripheral
+        );
         match (*peripheral).attribute_value(id) {
-            Ok(new_value) => *value = new_value,
-            Err(_) => return PERIPHERAL_ERR,
+            Ok(new_value) => {
+                log::debug!(
+                    "Response for the value of attribute {}: {:?}",
+                    id,
+                    new_value
+                );
+                *value = new_value
+            }
+            Err(e) => return e.error_code(),
         };
     }
 
@@ -150,13 +179,13 @@ extern "C" fn set_attribute_value(
     if peripheral.is_null() || value.is_null() {
         return PERIPHERAL_ERR;
     }
-    let peripheral = peripheral as *mut Box<Basic>;
+    let peripheral = peripheral as *mut Basic;
     let value = value as *const Value;
 
     unsafe {
         match (*peripheral).attribute_set_value(id, &*value) {
             Ok(_) => PERIPHERAL_OK,
-            Err(_) => PERIPHERAL_ERR,
+            Err(e) => e.error_code(),
         }
     }
 }

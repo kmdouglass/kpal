@@ -1,3 +1,5 @@
+mod init;
+
 use std::error::Error;
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -6,11 +8,12 @@ use std::time::Duration;
 
 use libloading::Symbol;
 
-use kpal_peripheral::Peripheral as Plugin;
+use kpal_peripheral::Peripheral as CPeripheral;
 use kpal_peripheral::{PeripheralNew, VTable, VTableNew};
 
-use crate::models::database::Queue;
-use crate::models::{Library, Peripheral};
+use crate::models::database::{Query, Queue};
+use crate::models::Library;
+use crate::models::Peripheral as ModelPeripheral;
 
 /// A thread safe version of a [Library](../models/struct.Library.html) instance.
 ///
@@ -19,39 +22,39 @@ use crate::models::{Library, Peripheral};
 /// make function calls from the library in a deterministic order.
 pub type TSLibrary = Arc<Mutex<Library>>;
 
-/// A PluginManager contains the necessary data to work with a Plugin across the FFI boundary.
+/// A Plugin contains the necessary data to work with a Plugin across the FFI boundary.
 ///
 /// This struct holds a raw pointer to aperipheral that is created by the Peripheral library. In
 /// addition it contains the vtable of function pointers defined by the C API and implemented
 /// within the Peripheral library.
 ///
-/// The PluginManager implements the `Send` trait because after creation the PluginManager is moved
+/// The Plugin implements the `Send` trait because after creation the Plugin is moved
 /// into the thread that is dedicated to the peripheral that it manages. Once it is moved, it will
 /// only ever be owned by this thread by design.
 #[derive(Debug)]
-struct PluginManager {
-    object: *mut Plugin,
+pub struct Plugin {
+    object: *mut CPeripheral,
     vtable: VTable,
 }
 
-impl Drop for PluginManager {
+impl Drop for Plugin {
     fn drop(&mut self) {
         (self.vtable.peripheral_free)(self.object);
     }
 }
 
-unsafe impl Send for PluginManager {}
+unsafe impl Send for Plugin {}
 
 pub fn init(
-    peripheral: &mut Peripheral,
+    peripheral: &mut ModelPeripheral,
     client: &redis::Client,
     lib: TSLibrary,
 ) -> std::result::Result<(), PluginInitError> {
-    let plugin: *mut Plugin =
+    let plugin: *mut CPeripheral =
         unsafe { peripheral_new(lib.clone()).map_err(|e| PluginInitError { side: Box::new(e) })? };
     let vtable: VTable =
         unsafe { peripheral_vtable(lib).map_err(|e| PluginInitError { side: Box::new(e) })? };
-    let plugin = PluginManager {
+    let plugin = Plugin {
         object: plugin,
         vtable: vtable,
     };
@@ -59,15 +62,17 @@ pub fn init(
     let db = client
         .get_connection()
         .map_err(|e| PluginInitError { side: Box::new(e) })?;
+
+    init::fetch_attributes(peripheral, &plugin);
     let peripheral = peripheral.clone();
 
     thread::spawn(move || -> Result<(), PeripheralThreadError> {
-        println!("Inside plugin loop with plugin: {:?}", plugin);
+        log::info!("Spawning new thread for plugin: {:?}", plugin);
         loop {
             let msg = match peripheral.rpop(&db).map_err(|_| PeripheralThreadError {})? {
                 Some(msg) => msg,
                 None => {
-                    println!("No message. Sleeping...");
+                    log::debug!("No message for plugin: {}", peripheral.id());
                     thread::sleep(Duration::from_secs(5));
                     continue;
                 }
@@ -79,7 +84,7 @@ pub fn init(
     Ok(())
 }
 
-unsafe fn peripheral_new(lib: TSLibrary) -> Result<*mut Plugin, PeripheralNewError> {
+unsafe fn peripheral_new(lib: TSLibrary) -> Result<*mut CPeripheral, PeripheralNewError> {
     let lib = lib.lock().map_err(|_| PeripheralNewError {})?;
 
     let dll = lib.dll().as_ref().ok_or(PeripheralNewError {})?;

@@ -6,8 +6,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use libc::c_int;
 use libloading::Library as Dll;
+use libloading::Symbol;
 use log;
+
+use kpal_peripheral::constants::*;
 
 use crate::models::Library;
 use crate::plugins::TSLibrary;
@@ -103,6 +107,20 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
             }
         };
 
+        log::info!("Calling initialization routine for {}", path);
+        let result = match initialize_peripheral(&lib) {
+            Ok(result) => result,
+            Err(_) => {
+                log::error!("Failed to call initialization routine for {}", path);
+                continue;
+            }
+        };
+
+        if result != LIBRARY_OK {
+            log::error!("Initialization of {} failed: {}", path, result);
+            continue;
+        }
+
         libraries.push(Arc::new(Mutex::new(Library::new(
             counter,
             file_name,
@@ -110,12 +128,20 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
         ))));
 
         counter += 1;
+        log::info!("Initialization of {} succeeded.", path);
     }
 
     if libraries.len() != 0 {
         Some(libraries)
     } else {
         None
+    }
+}
+
+fn initialize_peripheral(lib: &Dll) -> Result<c_int, io::Error> {
+    unsafe {
+        let init: Symbol<extern "C" fn() -> c_int> = lib.get(b"library_init\0")?;
+        Ok(init())
     }
 }
 
