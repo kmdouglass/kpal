@@ -71,11 +71,6 @@ pub fn post_peripherals(
 
     init_plugin(&mut periph, client, lib).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
 
-    // If we made it this far then everything initialized correctly, so finalize the peripheral
-    periph
-        .set(&db)
-        .map_err(|e| RequestHandlerError { side: Box::new(e) })?;
-
     let mut response = Response::text("The peripheral has been created.\n");
     response.status_code = 201;
     response.headers.push((

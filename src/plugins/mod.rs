@@ -1,19 +1,20 @@
+mod driver;
 mod init;
+mod scheduler;
 
 use std::error::Error;
 use std::fmt;
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 
 use libloading::Symbol;
 
 use kpal_peripheral::Peripheral as CPeripheral;
 use kpal_peripheral::{PeripheralNew, VTable, VTableNew};
 
-use crate::models::database::{Query, Queue};
+use crate::constants::SCHEDULER_SLEEP_DURATION;
 use crate::models::Library;
 use crate::models::Peripheral as ModelPeripheral;
+use scheduler::Scheduler;
 
 /// A thread safe version of a [Library](../models/struct.Library.html) instance.
 ///
@@ -31,7 +32,7 @@ pub type TSLibrary = Arc<Mutex<Library>>;
 /// The Plugin implements the `Send` trait because after creation the Plugin is moved
 /// into the thread that is dedicated to the peripheral that it manages. Once it is moved, it will
 /// only ever be owned by this thread by design.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Plugin {
     object: *mut CPeripheral,
     vtable: VTable,
@@ -63,23 +64,11 @@ pub fn init(
         .get_connection()
         .map_err(|e| PluginInitError { side: Box::new(e) })?;
 
-    init::fetch_attributes(peripheral, &plugin);
-    let peripheral = peripheral.clone();
+    init::attributes(peripheral, &plugin);
 
-    thread::spawn(move || -> Result<(), PeripheralThreadError> {
-        log::info!("Spawning new thread for plugin: {:?}", plugin);
-        loop {
-            let msg = match peripheral.rpop(&db).map_err(|_| PeripheralThreadError {})? {
-                Some(msg) => msg,
-                None => {
-                    log::debug!("No message for plugin: {}", peripheral.id());
-                    thread::sleep(Duration::from_secs(5));
-                    continue;
-                }
-            };
-            println!("Message: {}", msg);
-        }
-    });
+    let mut scheduler = Scheduler::new(plugin, db, peripheral.clone(), SCHEDULER_SLEEP_DURATION);
+    init::tasks(&peripheral, &mut scheduler);
+    Scheduler::run(scheduler);
 
     Ok(())
 }
@@ -89,11 +78,11 @@ unsafe fn peripheral_new(lib: TSLibrary) -> Result<*mut CPeripheral, PeripheralN
 
     let dll = lib.dll().as_ref().ok_or(PeripheralNewError {})?;
 
-    let init: Symbol<PeripheralNew> = dll
+    let peripheral_new: Symbol<PeripheralNew> = dll
         .get(b"peripheral_new\0")
         .map_err(|_| PeripheralNewError {})?;
 
-    Ok(init())
+    Ok(peripheral_new())
 }
 
 unsafe fn peripheral_vtable(lib: TSLibrary) -> Result<VTable, VTableError> {
@@ -126,21 +115,6 @@ impl Error for PluginInitError {
 impl fmt::Display for PluginInitError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "PluginInitError {{ Cause: {} }}", &*self.side)
-    }
-}
-
-#[derive(Debug)]
-pub struct PeripheralThreadError {}
-
-impl Error for PeripheralThreadError {
-    fn description(&self) -> &str {
-        "The peripheral thread failed"
-    }
-}
-
-impl fmt::Display for PeripheralThreadError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "The peripheral thread failed")
     }
 }
 

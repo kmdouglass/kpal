@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use database::{Count, Query, Queue};
 
+use kpal_peripheral::Value;
+
 pub mod database;
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
@@ -13,6 +15,47 @@ pub enum Attribute {
 
     #[serde(rename(serialize = "float", deserialize = "float"))]
     Float { id: usize, name: String, value: f64 },
+}
+
+impl Attribute {
+    /// Converts a peripheral Value into an Attribute.
+    ///
+    /// This function makes it easier to convert Values, which are returned from the Peripheral's
+    /// plugin API, to Attributes, which are passed across the REST API.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` The value to assign to the new attribute
+    /// * `id` The numeric ID of the attribute
+    /// * `name` The attribute's name
+    pub fn from(value: Value, id: usize, name: String) -> Attribute {
+        match value {
+            Value::Int(value) => Attribute::Int {
+                id: id,
+                name: name,
+                value: value,
+            },
+            Value::Float(value) => Attribute::Float {
+                id: id,
+                name: name,
+                value: value,
+            },
+        }
+    }
+
+    pub fn id(&self) -> usize {
+        match self {
+            Attribute::Int { id, .. } => *id,
+            Attribute::Float { id, .. } => *id,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Attribute::Int { name, .. } => name,
+            Attribute::Float { name, .. } => name,
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Serialize)]
@@ -71,8 +114,22 @@ impl Peripheral {
         self.library_id
     }
 
+    pub fn set_attribute(&mut self, id: usize, attribute: Attribute) {
+        match self.attributes.get_mut(id) {
+            Some(old_attribute) => *old_attribute = attribute,
+            None => {
+                log::debug!("could not set attribute; index not valid: {}", id);
+            }
+        }
+    }
+
     pub fn set_attributes(&mut self, attributes: Vec<Attribute>) {
         self.attributes = attributes;
+    }
+
+    pub fn set_attribute_from_value(&mut self, id: usize, value: Value) {
+        let attribute = self.attributes.get_mut(id).unwrap();
+        *attribute = Attribute::from(value, id, attribute.name().to_owned());
     }
 }
 
