@@ -12,6 +12,7 @@ use kpal_peripheral::{KpalPluginInit, Plugin};
 
 use crate::constants::SCHEDULER_SLEEP_DURATION;
 use crate::models::Library;
+// TODO Change name back to Peripheral
 use crate::models::Peripheral as ModelPeripheral;
 use scheduler::Scheduler;
 
