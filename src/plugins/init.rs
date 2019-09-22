@@ -1,19 +1,19 @@
-use std::ffi::CStr;
+use std::boxed::Box;
+use std::time::Instant;
 
-use libc::{c_uchar, size_t};
 use log;
-use memchr::memchr;
 
-use kpal_peripheral::constants::*;
 use kpal_peripheral::Value;
 
 use crate::constants::*;
 use crate::models::database::Query;
 use crate::models::{Attribute, Peripheral};
+use crate::plugins::driver::{attribute_name, attribute_value, NameResult, ValueResult};
+use crate::plugins::scheduler::{Scheduler, Task};
 use crate::plugins::Plugin;
 
-pub fn fetch_attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
-    log::info!("Fetching attributes for peripheral {}", peripheral.id());
+pub fn attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
+    log::info!("Getting attributes for peripheral {}", peripheral.id());
 
     let mut value = Value::Int(0);
     let mut name = [0u8; ATTRIBUTE_NAME_BUFFER_LENGTH];
@@ -21,7 +21,7 @@ pub fn fetch_attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
     let mut attr: Vec<Attribute> = Vec::new();
 
     loop {
-        match fetch_attribute_value(peripheral, plugin, index, &mut value) {
+        match attribute_value(plugin, index, &mut value) {
             ValueResult::Success => (),
             ValueResult::DoesNotExist => break,
             ValueResult::Failure => {
@@ -30,7 +30,7 @@ pub fn fetch_attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
             }
         };
 
-        let name = match fetch_attribute_name(peripheral, plugin, index, &mut name) {
+        let name = match attribute_name(plugin, index, &mut name) {
             NameResult::Success(name) => name,
             NameResult::DoesNotExist => break,
             NameResult::Failure => {
@@ -39,18 +39,7 @@ pub fn fetch_attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
             }
         };
 
-        attr.push(match value {
-            Value::Int(value) => Attribute::Int {
-                id: index,
-                name: name,
-                value: value,
-            },
-            Value::Float(value) => Attribute::Float {
-                id: index,
-                name: name,
-                value: value,
-            },
-        });
+        attr.push(Attribute::from(value.clone(), index, name));
 
         index += 1;
     }
@@ -58,93 +47,34 @@ pub fn fetch_attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
     peripheral.set_attributes(attr);
 }
 
-fn fetch_attribute_value(
-    peripheral: &mut Peripheral,
-    plugin: &Plugin,
-    index: size_t,
-    value: &mut Value,
-) -> ValueResult {
-    let result =
-        (plugin.vtable.attribute_value)(plugin.object, index as size_t, value as *mut Value);
-
-    if result == PERIPHERAL_OK {
-        log::debug!(
-            "Received value {:?} from peripheral {}",
-            value,
-            peripheral.id()
-        );
-        ValueResult::Success
-    } else if result == PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST {
-        log::debug!("Attribute does not exist: {}", result);
-        ValueResult::DoesNotExist
-    } else {
-        log::debug!(
-            "Received error code while fetching attribute value: {}",
-            result
-        );
-        ValueResult::Failure
+pub fn tasks(peripheral: &Peripheral, scheduler: &mut Scheduler) {
+    let start_now = Instant::now() - TASK_INTERVAL_DURATION;
+    for attr in peripheral.attributes() {
+        scheduler.push(Task::new(
+            String::from(format!(
+                "Get attribute {} from peripheral {}",
+                attr.id(),
+                peripheral.id()
+            )),
+            TASK_INTERVAL_DURATION,
+            start_now,
+            Box::new(attribute_value_callback(attr.id())),
+        ));
     }
 }
 
-fn fetch_attribute_name(
-    peripheral: &mut Peripheral,
-    plugin: &Plugin,
-    index: size_t,
-    name: &mut [u8],
-) -> NameResult {
-    // Reset all bytes to prevent accidental truncation of the name from previous iterations.
-    name.iter_mut().for_each(|x| *x = 0);
-
-    let result = (plugin.vtable.attribute_name)(
-        plugin.object,
-        index as size_t,
-        &mut name[0] as *mut c_uchar,
-        ATTRIBUTE_NAME_BUFFER_LENGTH,
-    );
-
-    if result == PERIPHERAL_OK {
-        let name = match memchr(0, &name)
-            .ok_or("could not find null byte")
-            .and_then(|null_byte| {
-                CStr::from_bytes_with_nul(&name[..=null_byte])
-                    .map_err(|_| "could not convert name from C string")
-            })
-            .map(|name| name.to_string_lossy().into_owned())
-        {
-            Ok(name) => name,
-            Err(err) => {
-                log::debug!("{}", err);
-                String::from("Unknown")
-            }
+/// Returns a function used by the scheduler to get the value of an attribute from the peripheral.
+///
+/// # Arguments
+///
+/// * `id` - The numeric ID of the attribute. This will be embedded into the callback function that
+/// is returned and will not need to be explicitly passed when calling the callback.
+fn attribute_value_callback(id: usize) -> impl Fn(&mut Peripheral, &Plugin) {
+    move |peripheral: &mut Peripheral, plugin: &Plugin| {
+        let mut value = Value::Int(0);
+        match attribute_value(plugin, id, &mut value) {
+            ValueResult::Success => peripheral.set_attribute_from_value(id, value),
+            _ => (),
         };
-
-        log::debug!(
-            "Received name {:?} from peripheral {}",
-            name,
-            peripheral.id()
-        );
-
-        NameResult::Success(name)
-    } else if result == PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST {
-        log::debug!("Attribute does not exist: {}", result);
-        NameResult::DoesNotExist
-    } else {
-        log::debug!(
-            "Received error code while fetching attribute name: {}",
-            result
-        );
-        NameResult::Failure
     }
-}
-
-enum ValueResult {
-    Success,
-    DoesNotExist,
-    Failure,
-}
-
-enum NameResult {
-    Success(String),
-    DoesNotExist,
-    Failure,
 }

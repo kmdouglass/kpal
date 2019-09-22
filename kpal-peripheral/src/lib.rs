@@ -24,7 +24,7 @@ pub struct Peripheral {
     _private: [u8; 0],
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub struct VTable {
     pub peripheral_free: extern "C" fn(*mut Peripheral),
