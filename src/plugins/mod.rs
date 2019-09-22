@@ -8,8 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use libloading::Symbol;
 
-use kpal_peripheral::Peripheral as CPeripheral;
-use kpal_peripheral::{PeripheralNew, VTable, VTableNew};
+use kpal_peripheral::{KpalPluginInit, Plugin};
 
 use crate::constants::SCHEDULER_SLEEP_DURATION;
 use crate::models::Library;
@@ -23,42 +22,12 @@ use scheduler::Scheduler;
 /// make function calls from the library in a deterministic order.
 pub type TSLibrary = Arc<Mutex<Library>>;
 
-/// A Plugin contains the necessary data to work with a Plugin across the FFI boundary.
-///
-/// This struct holds a raw pointer to aperipheral that is created by the Peripheral library. In
-/// addition it contains the vtable of function pointers defined by the C API and implemented
-/// within the Peripheral library.
-///
-/// The Plugin implements the `Send` trait because after creation the Plugin is moved
-/// into the thread that is dedicated to the peripheral that it manages. Once it is moved, it will
-/// only ever be owned by this thread by design.
-#[derive(Clone, Debug)]
-pub struct Plugin {
-    object: *mut CPeripheral,
-    vtable: VTable,
-}
-
-impl Drop for Plugin {
-    fn drop(&mut self) {
-        (self.vtable.peripheral_free)(self.object);
-    }
-}
-
-unsafe impl Send for Plugin {}
-
 pub fn init(
     peripheral: &mut ModelPeripheral,
     client: &redis::Client,
     lib: TSLibrary,
 ) -> std::result::Result<(), PluginInitError> {
-    let plugin: *mut CPeripheral =
-        unsafe { peripheral_new(lib.clone()).map_err(|e| PluginInitError { side: Box::new(e) })? };
-    let vtable: VTable =
-        unsafe { peripheral_vtable(lib).map_err(|e| PluginInitError { side: Box::new(e) })? };
-    let plugin = Plugin {
-        object: plugin,
-        vtable: vtable,
-    };
+    let plugin: Plugin = unsafe { kpal_plugin_init(lib.clone())? };
 
     let db = client
         .get_connection()
@@ -73,28 +42,20 @@ pub fn init(
     Ok(())
 }
 
-unsafe fn peripheral_new(lib: TSLibrary) -> Result<*mut CPeripheral, PeripheralNewError> {
-    let lib = lib.lock().map_err(|_| PeripheralNewError {})?;
+unsafe fn kpal_plugin_init(lib: TSLibrary) -> Result<Plugin, PluginInitError> {
+    let lib = lib.lock().map_err(|_| PluginInitError {
+        side: Box::new(ReferenceError {}),
+    })?;
 
-    let dll = lib.dll().as_ref().ok_or(PeripheralNewError {})?;
+    let dll = lib.dll().as_ref().ok_or(PluginInitError {
+        side: Box::new(ReferenceError {}),
+    })?;
 
-    let peripheral_new: Symbol<PeripheralNew> = dll
-        .get(b"peripheral_new\0")
-        .map_err(|_| PeripheralNewError {})?;
+    let kpal_plugin_init: Symbol<KpalPluginInit> = dll
+        .get(b"kpal_plugin_init\0")
+        .map_err(|e| PluginInitError { side: Box::new(e) })?;
 
-    Ok(peripheral_new())
-}
-
-unsafe fn peripheral_vtable(lib: TSLibrary) -> Result<VTable, VTableError> {
-    let lib = lib.lock().map_err(|_| VTableError {})?;
-
-    let dll = lib.dll().as_ref().ok_or(VTableError {})?;
-
-    let vtable: Symbol<VTableNew> = dll
-        .get(b"peripheral_vtable\0")
-        .map_err(|_| VTableError {})?;
-
-    Ok(vtable())
+    Ok(kpal_plugin_init())
 }
 
 #[derive(Debug)]
@@ -119,31 +80,31 @@ impl fmt::Display for PluginInitError {
 }
 
 #[derive(Debug)]
-pub struct PeripheralNewError {}
+pub struct LockError {}
 
-impl Error for PeripheralNewError {
+impl Error for LockError {
     fn description(&self) -> &str {
-        "Failed to fetch a symbol from the library"
+        "Could not obtain a lock on the library"
     }
 }
 
-impl fmt::Display for PeripheralNewError {
+impl fmt::Display for LockError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Could not create a new peripheral")
+        write!(f, "Could not obtain a lock on the library")
     }
 }
 
 #[derive(Debug)]
-pub struct VTableError {}
+pub struct ReferenceError {}
 
-impl Error for VTableError {
+impl Error for ReferenceError {
     fn description(&self) -> &str {
-        "Failed to fetch the vtable from the library"
+        "Could not obtain a reference to the library"
     }
 }
 
-impl fmt::Display for VTableError {
+impl fmt::Display for ReferenceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Could not create a new vtable")
+        write!(f, "Could not obtain a reference to the library")
     }
 }

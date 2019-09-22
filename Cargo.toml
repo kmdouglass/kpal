@@ -12,7 +12,7 @@ members = [
 ]
 
 [dependencies]
-kpal-peripheral= { path = "kpal-peripheral" }
+kpal-peripheral = { path = "kpal-peripheral" }
 dirs = "1.0"
 env_logger = "0.6"
 lazy_static = "1.3"

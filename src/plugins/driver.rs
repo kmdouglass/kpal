@@ -12,7 +12,7 @@ use crate::plugins::Plugin;
 
 pub fn attribute_value(plugin: &Plugin, index: size_t, value: &mut Value) -> ValueResult {
     let result =
-        (plugin.vtable.attribute_value)(plugin.object, index as size_t, value as *mut Value);
+        (plugin.vtable.attribute_value)(plugin.peripheral, index as size_t, value as *mut Value);
 
     if result == PERIPHERAL_OK {
         log::debug!("Received value: {:?}", value);
@@ -34,7 +34,7 @@ pub fn attribute_name(plugin: &Plugin, index: size_t, name: &mut [u8]) -> NameRe
     name.iter_mut().for_each(|x| *x = 0);
 
     let result = (plugin.vtable.attribute_name)(
-        plugin.object,
+        plugin.peripheral,
         index as size_t,
         &mut name[0] as *mut c_uchar,
         ATTRIBUTE_NAME_BUFFER_LENGTH,

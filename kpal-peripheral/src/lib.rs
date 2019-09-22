@@ -18,6 +18,30 @@ use std::fmt;
 
 use libc::{c_double, c_int, c_long, c_uchar, size_t};
 
+/// A Plugin contains the necessary data to work with a Plugin across the FFI boundary.
+///
+/// This struct holds a raw pointer to aperipheral that is created by the Peripheral library. In
+/// addition it contains the vtable of function pointers defined by the C API and implemented
+/// within the Peripheral library.
+///
+/// The Plugin implements the `Send` trait because after creation the Plugin is moved
+/// into the thread that is dedicated to the peripheral that it manages. Once it is moved, it will
+/// only ever be owned by this thread by design.
+#[derive(Clone, Debug)]
+#[repr(C)]
+pub struct Plugin {
+    pub peripheral: *mut Peripheral,
+    pub vtable: VTable,
+}
+
+impl Drop for Plugin {
+    fn drop(&mut self) {
+        (self.vtable.peripheral_free)(self.peripheral);
+    }
+}
+
+unsafe impl Send for Plugin {}
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct Peripheral {
@@ -40,8 +64,7 @@ pub struct VTable {
         extern "C" fn(peripheral: *mut Peripheral, id: size_t, value: *const Value) -> c_int,
 }
 
-pub type PeripheralNew = extern "C" fn() -> *mut Peripheral;
-pub type VTableNew = extern "C" fn() -> VTable;
+pub type KpalPluginInit = extern "C" fn() -> Plugin;
 
 #[derive(Debug)]
 #[repr(C)]
