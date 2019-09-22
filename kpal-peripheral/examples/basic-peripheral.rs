@@ -5,7 +5,7 @@ use libc::{c_int, c_uchar, size_t};
 
 use kpal_peripheral::constants::*;
 use kpal_peripheral::strings::copy_string;
-use kpal_peripheral::{Action, Attribute, AttributeError, Peripheral, Result, VTable, Value};
+use kpal_peripheral::*;
 
 #[derive(Debug)]
 #[repr(C)]
@@ -89,7 +89,10 @@ pub extern "C" fn library_init() -> c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn peripheral_vtable() -> VTable {
+pub extern "C" fn kpal_plugin_init() -> Plugin {
+    let peripheral: Box<Basic> = Box::new(Basic::new());
+    let peripheral = Box::into_raw(peripheral) as *mut Peripheral;
+
     let vtable = VTable {
         peripheral_free: peripheral_free,
         attribute_name: attribute_name,
@@ -97,15 +100,13 @@ pub extern "C" fn peripheral_vtable() -> VTable {
         set_attribute_value: set_attribute_value,
     };
 
-    log::debug!("Initialized VTable: {:?}", vtable);
-    vtable
-}
+    let plugin = Plugin {
+        peripheral: peripheral,
+        vtable: vtable,
+    };
 
-#[no_mangle]
-pub extern "C" fn peripheral_new() -> *mut Peripheral {
-    let peripheral: Box<Basic> = Box::new(Basic::new());
-    log::debug!("Peripheral is: {:?}", *peripheral);
-    Box::into_raw(peripheral) as *mut Peripheral
+    log::debug!("Initialized plugin: {:?}", plugin);
+    plugin
 }
 
 extern "C" fn peripheral_free(peripheral: *mut Peripheral) {
