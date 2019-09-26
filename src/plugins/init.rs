@@ -1,9 +1,10 @@
+//! Initialization routines for a Plugin.
 use std::boxed::Box;
 use std::time::Instant;
 
 use log;
 
-use kpal_peripheral::Value;
+use kpal_plugin::Value;
 
 use crate::constants::*;
 use crate::models::database::Query;
@@ -12,6 +13,12 @@ use crate::plugins::driver::{attribute_name, attribute_value, NameResult, ValueR
 use crate::plugins::scheduler::{Scheduler, Task};
 use crate::plugins::Plugin;
 
+/// Gets all attribute values and names from a Plugin and updates the corresponding Peripheral.
+///
+/// # Arguments
+///
+/// * `peripheral` - The Peripheral instance to update
+/// * `plugin` - The plugin whose attributes will be fetched
 pub fn attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
     log::info!("Getting attributes for peripheral {}", peripheral.id());
 
@@ -47,6 +54,14 @@ pub fn attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
     peripheral.set_attributes(attr);
 }
 
+/// Creates the tasks for getting attribute values from a plugin.
+///
+/// The callback field is a curried function that contains information specific to an attribute.
+///
+/// # Arguments
+///
+/// * `peripheral` - The Peripheral instance from which attributes will be obtained
+/// * `scheduler` - A Scheduler instance to populate with the new tasks
 pub fn tasks(peripheral: &Peripheral, scheduler: &mut Scheduler) {
     let start_now = Instant::now() - TASK_INTERVAL_DURATION;
     for attr in peripheral.attributes() {
@@ -69,6 +84,10 @@ pub fn tasks(peripheral: &Peripheral, scheduler: &mut Scheduler) {
 ///
 /// * `id` - The numeric ID of the attribute. This will be embedded into the callback function that
 /// is returned and will not need to be explicitly passed when calling the callback.
+///
+/// # Returns
+///
+/// A function that will be called when the corresponding Task is executed by a Scheduler.
 fn attribute_value_callback(id: usize) -> impl Fn(&mut Peripheral, &Plugin) {
     move |peripheral: &mut Peripheral, plugin: &Plugin| {
         let mut value = Value::Int(0);

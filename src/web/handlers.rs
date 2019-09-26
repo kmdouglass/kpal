@@ -1,3 +1,5 @@
+//! The set of request handlers for the individual endpoints of the web server.
+
 use std::boxed::Box;
 use std::error::Error;
 use std::fmt;
@@ -12,6 +14,7 @@ use crate::models::{Attribute, Peripheral};
 use crate::plugins::init as init_plugin;
 use crate::plugins::TSLibrary;
 
+/// Handles the GET /api/v0/libraries endpoint.
 pub fn get_libraries(db: &redis::Connection) -> Result<Response> {
     let result: Vec<Library> =
         Library::all(&db).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
@@ -19,6 +22,7 @@ pub fn get_libraries(db: &redis::Connection) -> Result<Response> {
     Ok(Response::json(&result))
 }
 
+/// Handles the GET /api/v0/libraries/{id} endpoint.
 pub fn get_library(db: &redis::Connection, id: usize) -> Result<Response> {
     let result: Option<Library> =
         Library::get(&db, id).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
@@ -28,7 +32,7 @@ pub fn get_library(db: &redis::Connection, id: usize) -> Result<Response> {
         None => Ok(Response::empty_404()),
     }
 }
-
+/// Handles the GET /api/v0/peripherals/{id} endpoint.
 pub fn get_peripheral(db: &redis::Connection, id: usize) -> Result<Response> {
     let result: Option<Peripheral> =
         Peripheral::get(&db, id).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
@@ -39,6 +43,7 @@ pub fn get_peripheral(db: &redis::Connection, id: usize) -> Result<Response> {
     }
 }
 
+/// Handles the GET /api/v0/peripherals endpoint.
 pub fn get_peripherals(db: &redis::Connection) -> Result<Response> {
     let result: Vec<Peripheral> =
         Peripheral::all(&db).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
@@ -46,6 +51,7 @@ pub fn get_peripherals(db: &redis::Connection) -> Result<Response> {
     Ok(Response::json(&result))
 }
 
+/// Handles the POST /api/v0/peripherals endpoint.
 pub fn post_peripherals(
     request: &Request,
     client: &redis::Client,
@@ -80,6 +86,7 @@ pub fn post_peripherals(
     Ok(response)
 }
 
+/// Handles the GET /api/v0/peripherals/{id}/attributes/{attr_id} endpoint.
 pub fn get_peripheral_attribute(
     db: &redis::Connection,
     id: usize,
@@ -101,6 +108,7 @@ pub fn get_peripheral_attribute(
     }
 }
 
+/// Handles the GET /api/v0/peripherals/{id}/attributes endpoint.
 pub fn get_peripheral_attributes(db: &redis::Connection, id: usize) -> Result<Response> {
     let result: Option<Peripheral> =
         Peripheral::get(&db, id).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
@@ -111,8 +119,10 @@ pub fn get_peripheral_attributes(db: &redis::Connection, id: usize) -> Result<Re
     }
 }
 
+/// Result type containing a RequestHandlerError for the Err variant.
 pub type Result<T> = std::result::Result<T, RequestHandlerError>;
 
+/// An error raised when processing a request.
 #[derive(Debug)]
 pub struct RequestHandlerError {
     side: Box<dyn Error>,

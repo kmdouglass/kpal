@@ -1,3 +1,10 @@
+//! Utilities to create and interact with Plugins.
+//!
+//! The plugins module is responsible for initializing new plugins and creating their
+//! schedulers. Each plugin is assigned a scheduler, and eeach scheduler runs inside its own
+//! thread. All communication with a peripheral occurs through tasks that are executed by the
+//! scheduler.
+
 mod driver;
 mod init;
 mod scheduler;
@@ -8,12 +15,11 @@ use std::sync::{Arc, Mutex};
 
 use libloading::Symbol;
 
-use kpal_peripheral::{KpalPluginInit, Plugin};
+use kpal_plugin::{KpalPluginInit, Plugin};
 
 use crate::constants::SCHEDULER_SLEEP_DURATION;
 use crate::models::Library;
-// TODO Change name back to Peripheral
-use crate::models::Peripheral as ModelPeripheral;
+use crate::models::Peripheral;
 use scheduler::Scheduler;
 
 /// A thread safe version of a [Library](../models/struct.Library.html) instance.
@@ -23,8 +29,15 @@ use scheduler::Scheduler;
 /// make function calls from the library in a deterministic order.
 pub type TSLibrary = Arc<Mutex<Library>>;
 
+/// Initializes a new plugin.
+///
+/// # Arguments
+///
+/// * `peripheral` - A Peripheral model instance that will be updated with the Plugin's information
+/// * `client` - A database client; a clone of this client will be passed to the scheduler
+/// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
 pub fn init(
-    peripheral: &mut ModelPeripheral,
+    peripheral: &mut Peripheral,
     client: &redis::Client,
     lib: TSLibrary,
 ) -> std::result::Result<(), PluginInitError> {
@@ -43,9 +56,17 @@ pub fn init(
     Ok(())
 }
 
+/// Requests a new Plugin object from the Library.
+///
+/// This function is unsafe because it calls a function that is provided by the shared library
+/// through the FFI.
+///
+/// # Arguments
+///
+/// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
 unsafe fn kpal_plugin_init(lib: TSLibrary) -> Result<Plugin, PluginInitError> {
     let lib = lib.lock().map_err(|_| PluginInitError {
-        side: Box::new(ReferenceError {}),
+        side: Box::new(LockError {}),
     })?;
 
     let dll = lib.dll().as_ref().ok_or(PluginInitError {
@@ -59,6 +80,7 @@ unsafe fn kpal_plugin_init(lib: TSLibrary) -> Result<Plugin, PluginInitError> {
     Ok(kpal_plugin_init())
 }
 
+/// An error caused by any failure in the Plugin initialization routines.
 #[derive(Debug)]
 pub struct PluginInitError {
     side: Box<dyn Error>,
@@ -80,6 +102,7 @@ impl fmt::Display for PluginInitError {
     }
 }
 
+/// An error caused by the inability to obtain a lock on a Library instance.
 #[derive(Debug)]
 pub struct LockError {}
 
@@ -95,6 +118,7 @@ impl fmt::Display for LockError {
     }
 }
 
+/// An error caused by the inability to obtain a reference to a Library instance.
 #[derive(Debug)]
 pub struct ReferenceError {}
 
