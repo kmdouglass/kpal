@@ -13,5 +13,5 @@ libc = "0.2"
 log = "0.4"
 
 [[example]]
-name = "basic-peripheral"
+name = "basic-plugin"
 crate-type = ["cdylib"]
