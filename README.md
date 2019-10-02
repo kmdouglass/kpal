@@ -41,3 +41,7 @@ Peripherals are integrated into KPAL as plugins. A plugin uses a shared library 
 Linux) to communicate with the daemon. The common set of functions that the library provides is the
 plugin API. Any programming language that can provide a C language interface can be used to write a
 plugin library.
+
+## Writing plugins
+
+See the [kpal-plugin](kpal-plugin) crate for more information.

@@ -264,7 +264,7 @@ mod tests {
         set_up();
 
         let mut lib = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        lib.push("target/debug/examples/libbasic-peripheral.so");
+        lib.push("target/debug/examples/libbasic-plugin.so");
 
         let mut libs: Vec<PathBuf> = Vec::new();
         libs.push(lib);
