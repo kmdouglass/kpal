@@ -1,10 +1,22 @@
+//! The endpoints of the web server.
+//!
+//! The user API is defined in this module. It is a REST API whose endpoints correspond to the
+//! resources of the object model (peripherals, libraries, etc.).
+
 use log;
 use redis;
 use rouille::{router, Request, Response};
 
-use crate::handlers;
 use crate::plugins::TSLibrary;
+use crate::web::handlers;
 
+/// Directs a HTTP request to the appropriate handler and returns a HTTP response.
+///
+/// # Arguments
+///
+/// * `request` - The object containing the information concerning the client's request
+/// * `db` - A connection to the database
+/// * `libs` The set of libraries that is currently open by the daemon
 pub fn routes(
     request: &Request,
     client: &redis::Client,

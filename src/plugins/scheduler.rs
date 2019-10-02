@@ -12,8 +12,13 @@ use crate::models::Peripheral;
 use crate::plugins::Plugin;
 
 /// A single task to be executed by the scheduler.
+///
+/// # Safety
+///
+/// A `Task` instance is Send because it is created outside of the only thread in which it is
+/// used. Implementing Send allows us to move the task into the thread after it is created.
 pub struct Task {
-    /// A short description of the task that will appear in the logs.
+    /// A short description of the task that is intended for humans
     description: String,
 
     /// The minimum amount of time that must elapse between the end of one run of the task and the
@@ -33,6 +38,14 @@ pub struct Task {
 }
 
 impl Task {
+    /// Returns a new instance of a Task.
+    ///
+    /// # Arguments
+    ///
+    /// * `description` - A short description of the task that is intended for humans
+    /// * `interval` - The minimum amount of time that must elapse between the end of one run of
+    /// the task and the start of the next run
+    /// * `last_tick` - The time at which the previous run of the task finished
     pub fn new(
         description: String,
         interval: Duration,
@@ -48,22 +61,38 @@ impl Task {
     }
 }
 
-// A Task instance is created outside of the only thread in which it is used. Implementing Send
-// allows us to move the task into the thread after it is created.
 unsafe impl Send for Task {}
 
+/// Executes tasks on a Plugin.
+///
+/// Each Plugin is powered by a single scheduler.
 pub struct Scheduler {
+    /// The Plugin instance that is managed by this Scheduler.
     pub plugin: Plugin,
 
+    /// A connection to the database.
     db: redis::Connection,
+
+    /// A copy of a Peripheral. This is used to update the corresponding entry in the database.
     peripheral: Peripheral,
 
     /// The time between the end of one run of the scheduler and the start of the next.
     sleep: Duration,
+
+    /// A collection of tasks to periodically execute.
     tasks: Vec<Task>,
 }
 
 impl Scheduler {
+    /// Returns a new instance of a scheduler.
+    ///
+    /// # Arguments
+    ///
+    /// * `plugin` - The Plugin instance that is managed by this Scheduler
+    /// * `db` - A connection to the database
+    /// * `peripheral` - A copy of a Peripheral. This is used to update the corresponding entry in
+    /// the database.
+    /// * `sleep` - The time between the end of one run of the scheduler and the start of the next
     pub fn new(
         plugin: Plugin,
         db: redis::Connection,
@@ -81,10 +110,26 @@ impl Scheduler {
         }
     }
 
+    /// Adds a new task to the end of the list of Tasks to be executed by the scheduler.
+    ///
+    /// * `task` - The task to add to the scheduler.
     pub fn push(&mut self, task: Task) {
         self.tasks.push(task);
     }
 
+    /// Starts a Scheduler.
+    ///
+    /// The Scheduler runs inside an infinite loop. During one iteration of the loop, it executes
+    /// each of its Tasks one-by-one from the beginning of the list to the end. If any Tasks were
+    /// one, it updates the database entry and then sleeps for a set amount of time.
+    ///
+    /// This is a function and not a method of a Scheduler instance because the function takes
+    /// ownership of the instance.
+    ///
+    /// # Arguments
+    ///
+    /// - `scheduler` - A Scheduler instance. This will be consumed by the function and cannot be
+    /// used again after this function is called.
     pub fn run(mut scheduler: Scheduler) {
         thread::spawn(move || -> Result<(), SchedulerRuntimeError> {
             log::info!("Spawning new thread for plugin: {:?}", scheduler.plugin);
@@ -127,6 +172,8 @@ impl Scheduler {
         });
     }
 }
+
+/// An error returned by a failed Scheduler thread.
 #[derive(Debug)]
 pub struct SchedulerRuntimeError {}
 

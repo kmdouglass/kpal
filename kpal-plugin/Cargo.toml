@@ -1,5 +1,5 @@
 [package]
-name = "kpal-peripheral"
+name = "kpal-plugin"
 version = "0.1.0"
 authors = ["kmdouglass <kyle.m.douglass@gmail.com>"]
 edition = "2018"

@@ -8,11 +8,11 @@ edition = "2018"
 
 members = [
     "./",
-    "kpal-peripheral",
+    "kpal-plugin",
 ]
 
 [dependencies]
-kpal-peripheral = { path = "kpal-peripheral" }
+kpal-plugin = { path = "kpal-plugin" }
 dirs = "1.0"
 env_logger = "0.6"
 lazy_static = "1.3"

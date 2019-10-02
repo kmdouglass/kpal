@@ -6,7 +6,7 @@ use rouille::Response;
 use structopt::StructOpt;
 
 use kpal::init::{init, Cli};
-use kpal::routes::routes;
+use kpal::web::routes::routes;
 
 fn main() {
     env_logger::init();

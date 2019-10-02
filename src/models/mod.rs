@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use database::{Count, Query, Queue};
 
-use kpal_peripheral::Value;
+use kpal_plugin::Value;
 
 pub mod database;
 

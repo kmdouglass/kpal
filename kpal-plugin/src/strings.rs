@@ -1,13 +1,26 @@
+//! Provides tools for working with strings in KPAL plugins.
 use std::error::Error;
 use std::fmt;
 use std::slice;
 
+/// Copies a C-compatible string to a buffer.
+///
+/// # Arguments
+///
+/// * `string` - A reference to an array of bytes to copy
+/// * `buffer` - An array of bytes to receive the copy of the string
+/// * `length` - The length of the buffer
+///
+/// # Safety
+///
+/// This function is unsafe because of its use of slice::from_raw_parts, which relies on the caller
+/// to not exceed the length of the buffer when generating the slice.
 pub unsafe fn copy_string(
     string: &[u8],
     buffer: *mut u8,
     length: usize,
 ) -> Result<(), BufferOverflowError> {
-    let mut buffer = slice::from_raw_parts_mut(buffer, length);
+    let buffer = slice::from_raw_parts_mut(buffer, length);
     if string.len() > buffer.len() {
         return Err(BufferOverflowError {});
     }
@@ -17,6 +30,7 @@ pub unsafe fn copy_string(
     Ok(())
 }
 
+/// Raised when the length of a string exceeds the length of the buffer into which it is copied.
 #[derive(Debug)]
 pub struct BufferOverflowError {}
 

@@ -1,3 +1,4 @@
+//! Methods for loading and initializing plugin libraries.
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
@@ -11,16 +12,19 @@ use libloading::Library as Dll;
 use libloading::Symbol;
 use log;
 
-use kpal_peripheral::constants::*;
+use kpal_plugin::constants::*;
 
 use crate::models::Library;
 use crate::plugins::TSLibrary;
 
-/// Initializes the process of finding and loading peripheral libraries.
+/// Returns a list of loaded plugin libraries.
+///
+/// Any critical errors that occur while finding and loading the libraries will be contained within
+/// the LibraryInitError embedded in the Err variant.
 ///
 /// # Arguments
 ///
-/// * `dir` - A path to a directory to search for peripheral library files.
+/// * `dir` - A path to a directory to search for plugin library files
 pub fn init(dir: &Path) -> Result<Vec<TSLibrary>, LibraryInitError> {
     log::info!(
         "Searching for peripheral library files inside the following directory: {:?}",
@@ -44,11 +48,11 @@ pub fn init(dir: &Path) -> Result<Vec<TSLibrary>, LibraryInitError> {
     load_peripherals(libraries).ok_or_else(|| LibraryInitError)
 }
 
-/// Finds all peripheral library files inside a directory.
+/// Finds all plugin library files inside a directory.
 ///
 /// # Arguments
 ///
-/// * `dir` - A path to a directory to search for peripheral library files.
+/// * `dir` - A path to a directory to search for plugin library files
 fn find_peripherals(dir: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
     let mut peripherals: Vec<PathBuf> = Vec::new();
     log::debug!("Beginning search for peripheral libraries in {:?}", dir);
@@ -77,11 +81,11 @@ fn find_peripherals(dir: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
     }
 }
 
-/// Loads a list of peripheral library files.
+/// Loads a list of plugin library files.
 ///
 /// # Arguments
 ///
-/// * `lib_paths` - A vector of `PathBuf`s pointing to library files to load.
+/// * `lib_paths` - A vector of `PathBuf`s pointing to library files to load
 fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
     log::debug!("Loading peripherals...");
     let (mut libraries, mut counter) = (Vec::new(), 0usize);
@@ -138,13 +142,21 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
     }
 }
 
+/// Calls the initialization callback function of the library.
+///
+/// The integer return code of the callback is returned in the Ok variant of the result.
+///
+/// # Arguments
+///
+/// * `lib` - The library to initialize
 fn initialize_peripheral(lib: &Dll) -> Result<c_int, io::Error> {
     unsafe {
-        let init: Symbol<extern "C" fn() -> c_int> = lib.get(b"library_init\0")?;
+        let init: Symbol<extern "C" fn() -> c_int> = lib.get(b"kpal_library_init\0")?;
         Ok(init())
     }
 }
 
+/// An general error that is raised while initializing the libraries.
 #[derive(Debug)]
 pub struct LibraryInitError;
 
