@@ -1,3 +1,4 @@
+//! Routines for initializing the daemon.
 pub mod database;
 pub mod library;
 
@@ -40,16 +41,16 @@ pub struct Cli {
     pub db_addr: Url,
 
     #[structopt(
-        short = "p",
-        long = "peripheral-dir",
+        short = "l",
+        long = "library-dir",
         raw(default_value = "&DEFAULT_LIBRARY_DIR"),
         parse(from_os_str)
     )]
-    pub peripheral_dir: PathBuf,
+    pub library_dir: PathBuf,
 }
 
 pub fn init(args: &Cli) -> Result<(redis::Client, Mutex<redis::Connection>, Vec<TSLibrary>)> {
-    let libs = library::init(&args.peripheral_dir).map_err(|e| InitError { side: Box::new(e) })?;
+    let libs = library::init(&args.library_dir).map_err(|e| InitError { side: Box::new(e) })?;
     let (client, db) =
         database::init(&args.db_addr, &libs).map_err(|e| InitError { side: Box::new(e) })?;
 
