@@ -3,19 +3,37 @@ jobs:
   build:
     docker:
       - image: rust:1
+      - image: circleci/redis@sha256:d9bf13cc10de44a404ae2328d51fa8bd56eab2de9cf97a991d2b69aa5aa8e327
 
     steps:
       - checkout
 
       - run:
+          name: Install dockerize
+          command: |
+            wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz
+            tar -C /usr/local/bin -xzvf dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz
+            rm dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz
+          environment:
+            DOCKERIZE_VERSION: v0.3.0
+
+      - run:
+          name: Wait for the database
+          command: dockerize -wait tcp://localhost:6379 -timeout 1m
+      
+      - run:
           name: Check formatting
           command: |
             rustup component add rustfmt
             cargo fmt -- --check
+
       - run:
           name: Build all targets
           command: cargo build --all --all-targets
 
       - run:
-          name: Unit test
+          name: Test all targets
           command: cargo test --all --all-targets
+          environment:
+            DATABASE_ADDRESS: redis://0.0.0.0:6379
+            SERVER_ADDRESS: 0.0.0.0:8080
