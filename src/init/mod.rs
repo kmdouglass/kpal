@@ -29,6 +29,10 @@ lazy_static! {
 }
 
 #[derive(StructOpt)]
+#[structopt(
+    name = "kpald",
+    about = "A general-purpose control system for physical computing"
+)]
 pub struct Cli {
     #[structopt(short = "s", long = "server-address", default_value = "0.0.0.0:8000")]
     pub server_addr: SocketAddr,
