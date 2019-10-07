@@ -1,7 +1,7 @@
 [package]
 name = "kpal"
 version = "0.1.0"
-authors = ["Kyle M. Douglass <kyle.m.douglass@gmail.com>"]
+authors = ["Kyle M. Douglass <kyle.douglass@protonmail.com>"]
 edition = "2018"
 
 [workspace]
