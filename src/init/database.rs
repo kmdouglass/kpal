@@ -1,3 +1,4 @@
+//! Methods for initializing the database.
 use std::boxed::Box;
 use std::error::Error;
 use std::fmt;
@@ -14,6 +15,12 @@ use crate::models::Library;
 use crate::plugins::TSLibrary;
 
 // TODO Provide a connection pool rather than a single mutex to the database connection
+/// Returns an initialized connection to the database.
+///
+/// # Arguments
+///
+/// * `db_addr` - The socket address of the database
+/// * `libs` - A vector of libraries that have been loaded into memory
 pub fn init(
     db_addr: &Url,
     libs: &Vec<TSLibrary>,
@@ -36,19 +43,24 @@ pub fn init(
 
     log::debug!("Initializing model-specific data inside the database");
     model_init(&connection).map_err(|e| DatabaseInitError { side: Box::new(e) })?;
-    libs_to_json(libs, &connection)?;
+    libs_to_db(libs, &connection)?;
 
     Ok((client, Mutex::new(connection)))
 }
 
-fn libs_to_json(libs: &Vec<TSLibrary>, db: &redis::Connection) -> Result<(), DatabaseInitError> {
+/// Writes the library information to the database.
+///
+/// # Arguments
+///
+/// * `libs` - A collection of peripheral libraries that have been loaded into memory
+/// * `db` - A connection to the database
+fn libs_to_db(libs: &Vec<TSLibrary>, db: &redis::Connection) -> Result<(), DatabaseInitError> {
     log::info!("Writing peripheral library information to the database");
 
     let mut lib_json: String;
     for lib in libs.iter() {
-        // TODO Can the expect() be removed here? The returned error has a lifetime, so it cannot
-        // be used to create a new side effect for a DatabaseInitError
-        let lib = lib.lock().expect("Could not obtain a lock on the Library");
+        // There's no reason for the daemon to continue if it cannot grab a lock on the libraries.
+        let lib = lib.lock().expect("Could not obtain a lock on the library");
         lib_json =
             serde_json::to_string(&(*lib)).map_err(|e| DatabaseInitError { side: Box::new(e) })?;
 
@@ -64,6 +76,7 @@ fn libs_to_json(libs: &Vec<TSLibrary>, db: &redis::Connection) -> Result<(), Dat
     Ok(())
 }
 
+/// Raised when an error occurs during database initialization.
 #[derive(Debug)]
 pub struct DatabaseInitError {
     side: Box<dyn Error>,

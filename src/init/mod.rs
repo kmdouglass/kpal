@@ -28,6 +28,7 @@ lazy_static! {
     };
 }
 
+/// The set of command line arguments for the daemon.
 #[derive(StructOpt)]
 #[structopt(
     name = "kpald",
@@ -53,6 +54,15 @@ pub struct Cli {
     pub library_dir: PathBuf,
 }
 
+/// Initializes the daemon.
+///
+/// This method returns the data structures that are required by the daemon to operate, including a
+/// database client, a connection (for use by the route handlers), and a vector of thread-safe
+/// libraries that have been loaded into memory.
+///
+/// # Arguments
+///
+/// * `args` - The command line arguments that were passed to the daemon at startup.
 pub fn init(args: &Cli) -> Result<(redis::Client, Mutex<redis::Connection>, Vec<TSLibrary>)> {
     let libs = library::init(&args.library_dir).map_err(|e| InitError { side: Box::new(e) })?;
     let (client, db) =
@@ -61,8 +71,10 @@ pub fn init(args: &Cli) -> Result<(redis::Client, Mutex<redis::Connection>, Vec<
     Ok((client, db, libs))
 }
 
+/// A Result that is returned by this module.
 pub type Result<T> = std::result::Result<T, InitError>;
 
+/// Raised  when an error occurs during the daemon's initialization.
 #[derive(Debug)]
 pub struct InitError {
     side: Box<dyn Error>,
