@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fmt;
 
 use redis;
+use redis::Commands;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json;
@@ -72,11 +73,10 @@ pub trait Query {
     where
         Self: DeserializeOwned + Sized,
     {
-        // TODO Explore other options since KEYS is not recommended for production
-        let keys: Vec<String> = redis::cmd("KEYS")
-            .arg(format!("{}:*", Self::key()))
-            .query(db)
-            .map_err(|e| DatabaseError { side: Box::new(e) })?;
+        let keys: Vec<String> = db
+            .scan_match(format!("{}:*", Self::key()))
+            .map_err(|e| DatabaseError { side: Box::new(e) })?
+            .collect();
 
         let json: Vec<String> = redis::cmd("MGET")
             .arg(keys)
