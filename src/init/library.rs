@@ -19,9 +19,6 @@ use crate::plugins::TSLibrary;
 
 /// Returns a list of loaded plugin libraries.
 ///
-/// Any critical errors that occur while finding and loading the libraries will be contained within
-/// the LibraryInitError embedded in the Err variant.
-///
 /// # Arguments
 ///
 /// * `dir` - A path to a directory to search for plugin library files
@@ -57,7 +54,6 @@ fn find_peripherals(dir: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
     let mut peripherals: Vec<PathBuf> = Vec::new();
     log::debug!("Beginning search for peripheral libraries in {:?}", dir);
     for entry in read_dir(dir)? {
-        log::debug!("Examining entry");
         let entry = entry?;
         let path = entry.path();
         log::debug!("Found candidate library file {:?}", path);
@@ -112,7 +108,7 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
         };
 
         log::info!("Calling initialization routine for {}", path);
-        let result = match initialize_peripheral(&lib) {
+        let result = match initialize_library(&lib) {
             Ok(result) => result,
             Err(_) => {
                 log::error!("Failed to call initialization routine for {}", path);
@@ -149,14 +145,14 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
 /// # Arguments
 ///
 /// * `lib` - The library to initialize
-fn initialize_peripheral(lib: &Dll) -> Result<c_int, io::Error> {
+fn initialize_library(lib: &Dll) -> Result<c_int, io::Error> {
     unsafe {
         let init: Symbol<extern "C" fn() -> c_int> = lib.get(b"kpal_library_init\0")?;
         Ok(init())
     }
 }
 
-/// An general error that is raised while initializing the libraries.
+/// A general error that is raised while initializing the libraries.
 #[derive(Debug)]
 pub struct LibraryInitError;
 
