@@ -230,11 +230,33 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_library_new() {
+        let context = set_up();
+        let library = Library::new(context.id, context.name.clone(), None);
+
+        assert_eq!(library.id, context.id);
+        assert_eq!(library.name, context.name);
+        assert!(library.library.is_none());
+    }
+
+    #[test]
+    fn test_library_dll() {
+        let context = set_up();
+        let library = Library {
+            id: context.id,
+            name: context.name.clone(),
+            library: None,
+        };
+
+        assert!(library.dll().is_none());
+    }
+
     struct Context {
-        id: usize,
-        name: String,
-        int_value: i64,
         float_value: f64,
+        id: usize,
+        int_value: i64,
+        name: String,
         attributes: Vec<Attribute>,
     }
 
