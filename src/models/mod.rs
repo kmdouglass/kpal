@@ -58,6 +58,40 @@ impl Attribute {
     }
 }
 
+impl Eq for Attribute {}
+
+impl PartialEq for Attribute {
+    fn eq(&self, other: &Attribute) -> bool {
+        match (self, other) {
+            (
+                Attribute::Int {
+                    id: id1,
+                    name: name1,
+                    value: value1,
+                },
+                Attribute::Int {
+                    id: id2,
+                    name: name2,
+                    value: value2,
+                },
+            ) => id1 == id2 && name1 == name2 && value1 == value2,
+            (
+                Attribute::Float {
+                    id: id1,
+                    name: name1,
+                    value: value1,
+                },
+                Attribute::Float {
+                    id: id2,
+                    name: name2,
+                    value: value2,
+                },
+            ) => id1 == id2 && name1 == name2 && value1 == value2,
+            (_, _) => false,
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Serialize)]
 pub struct Library {
     id: usize,
@@ -150,3 +184,177 @@ impl Query for Peripheral {
 impl Count for Peripheral {}
 
 impl Queue for Peripheral {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use kpal_plugin::Value;
+
+    #[test]
+    fn test_attribute_from() {
+        let context = set_up();
+        let values = vec![
+            Value::Int(context.int_value),
+            Value::Float(context.float_value),
+        ];
+        let cases = values.into_iter().zip(context.attributes);
+
+        for (value, attr) in cases {
+            let converted_attr = Attribute::from(value, context.id, context.name.clone());
+            assert_eq!(attr, converted_attr);
+        }
+    }
+
+    #[test]
+    fn test_attribute_id() {
+        let context = set_up();
+        let names = vec![context.id, context.id];
+        let cases = names.into_iter().zip(context.attributes);
+
+        for case in cases {
+            let (id, attr) = case;
+            assert_eq!(id, attr.id());
+        }
+    }
+
+    #[test]
+    fn test_attribute_name() {
+        let context = set_up();
+        let names = vec![context.name.clone(), context.name.clone()];
+        let cases = names.into_iter().zip(context.attributes);
+
+        for case in cases {
+            let (name, attr) = case;
+            assert_eq!(name, attr.name());
+        }
+    }
+
+    #[test]
+    fn test_library_new() {
+        let context = set_up();
+        let library = Library::new(context.id, context.name.clone(), None);
+
+        assert_eq!(library.id, context.id);
+        assert_eq!(library.name, context.name);
+        assert!(library.library.is_none());
+    }
+
+    #[test]
+    fn test_library_dll() {
+        let context = set_up();
+        let library = Library {
+            id: context.id,
+            name: context.name.clone(),
+            library: None,
+        };
+
+        assert!(library.dll().is_none());
+    }
+
+    #[test]
+    fn test_peripheral_attributes() {
+        let context = set_up();
+        assert_eq!(*context.peripheral.attributes(), context.attributes);
+    }
+
+    #[test]
+    fn test_peripheral_library_id() {
+        let context = set_up();
+        assert_eq!(context.peripheral.library_id(), context.library_id);
+    }
+
+    #[test]
+    fn test_peripheral_set_attribute() {
+        let mut context = set_up();
+        let new_attr = Attribute::Float {
+            id: context.id,
+            name: context.name,
+            value: 3.14159,
+        };
+
+        assert_ne!(context.peripheral.attributes[0], new_attr);
+
+        context.peripheral.set_attribute(0, new_attr.clone());
+        assert_eq!(context.peripheral.attributes[0], new_attr);
+    }
+
+    #[test]
+    fn test_peripheral_set_attributes() {
+        let mut context = set_up();
+        let new_attr = Attribute::Float {
+            id: context.id,
+            name: context.name.clone(),
+            value: 3.14159,
+        };
+
+        for attr in context.peripheral.attributes.clone() {
+            assert_ne!(attr, new_attr);
+        }
+
+        context.peripheral.set_attributes(vec![new_attr.clone()]);
+        for attr in context.peripheral.attributes {
+            assert_eq!(attr, new_attr);
+        }
+    }
+
+    #[test]
+    fn test_peripheral_set_attribute_from_value() {
+        let mut context = set_up();
+        let new_value = Value::Float(3.14159);
+        let new_attr = Attribute::Float {
+            id: context.id,
+            name: context.name.clone(),
+            value: 3.14159,
+        };
+
+        assert_ne!(context.peripheral.attributes[0], new_attr);
+
+        context.peripheral.set_attribute_from_value(0, new_value);
+        assert_eq!(context.peripheral.attributes[0], new_attr);
+    }
+
+    struct Context {
+        attributes: Vec<Attribute>,
+        float_value: f64,
+        id: usize,
+        int_value: i64,
+        library_id: usize,
+        name: String,
+        peripheral: Peripheral,
+    }
+
+    fn set_up() -> Context {
+        let (id, name, int_value, float_value) = (0, String::from("foo"), 42, 42.42);
+        let library_id = 1;
+        let attributes = vec![
+            Attribute::Int {
+                id: id,
+                name: name.clone(),
+                value: int_value,
+            },
+            Attribute::Float {
+                id: id,
+                name: name.clone(),
+                value: float_value,
+            },
+        ];
+
+        let peripheral = Peripheral {
+            library_id: library_id,
+            name: name.clone(),
+            attributes: attributes.clone(),
+            id: id,
+        };
+
+        Context {
+            attributes,
+            float_value,
+            id,
+            int_value,
+            library_id,
+            name,
+            peripheral,
+        }
+    }
+}
