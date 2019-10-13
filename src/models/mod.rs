@@ -58,6 +58,40 @@ impl Attribute {
     }
 }
 
+impl Eq for Attribute {}
+
+impl PartialEq for Attribute {
+    fn eq(&self, other: &Attribute) -> bool {
+        match (self, other) {
+            (
+                Attribute::Int {
+                    id: id1,
+                    name: name1,
+                    value: value1,
+                },
+                Attribute::Int {
+                    id: id2,
+                    name: name2,
+                    value: value2,
+                },
+            ) => id1 == id2 && name1 == name2 && value1 == value2,
+            (
+                Attribute::Float {
+                    id: id1,
+                    name: name1,
+                    value: value1,
+                },
+                Attribute::Float {
+                    id: id2,
+                    name: name2,
+                    value: value2,
+                },
+            ) => id1 == id2 && name1 == name2 && value1 == value2,
+            (_, _) => false,
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Serialize)]
 pub struct Library {
     id: usize,
@@ -150,3 +184,38 @@ impl Query for Peripheral {
 impl Count for Peripheral {}
 
 impl Queue for Peripheral {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use kpal_plugin::Value;
+
+    #[test]
+    fn test_attribute_from() {
+        let (id, name) = (0, String::from("foo"));
+        let cases = vec![
+            (
+                Value::Int(42),
+                Attribute::Int {
+                    id: id,
+                    name: name.clone(),
+                    value: 42,
+                },
+            ),
+            (
+                Value::Float(42.42),
+                Attribute::Float {
+                    id: id,
+                    name: name.clone(),
+                    value: 42.42,
+                },
+            ),
+        ];
+
+        for (value, attr) in cases {
+            let converted_attr = Attribute::from(value, id, name.clone());
+            assert_eq!(attr, converted_attr);
+        }
+    }
+}
