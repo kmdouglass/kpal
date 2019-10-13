@@ -252,16 +252,81 @@ mod tests {
         assert!(library.dll().is_none());
     }
 
+    #[test]
+    fn test_peripheral_attributes() {
+        let context = set_up();
+        assert_eq!(*context.peripheral.attributes(), context.attributes);
+    }
+
+    #[test]
+    fn test_peripheral_library_id() {
+        let context = set_up();
+        assert_eq!(context.peripheral.library_id(), context.library_id);
+    }
+
+    #[test]
+    fn test_peripheral_set_attribute() {
+        let mut context = set_up();
+        let new_attr = Attribute::Float {
+            id: context.id,
+            name: context.name,
+            value: 3.14159,
+        };
+
+        assert_ne!(context.peripheral.attributes[0], new_attr);
+
+        context.peripheral.set_attribute(0, new_attr.clone());
+        assert_eq!(context.peripheral.attributes[0], new_attr);
+    }
+
+    #[test]
+    fn test_peripheral_set_attributes() {
+        let mut context = set_up();
+        let new_attr = Attribute::Float {
+            id: context.id,
+            name: context.name.clone(),
+            value: 3.14159,
+        };
+
+        for attr in context.peripheral.attributes.clone() {
+            assert_ne!(attr, new_attr);
+        }
+
+        context.peripheral.set_attributes(vec![new_attr.clone()]);
+        for attr in context.peripheral.attributes {
+            assert_eq!(attr, new_attr);
+        }
+    }
+
+    #[test]
+    fn test_peripheral_set_attribute_from_value() {
+        let mut context = set_up();
+        let new_value = Value::Float(3.14159);
+        let new_attr = Attribute::Float {
+            id: context.id,
+            name: context.name.clone(),
+            value: 3.14159,
+        };
+
+        assert_ne!(context.peripheral.attributes[0], new_attr);
+
+        context.peripheral.set_attribute_from_value(0, new_value);
+        assert_eq!(context.peripheral.attributes[0], new_attr);
+    }
+
     struct Context {
+        attributes: Vec<Attribute>,
         float_value: f64,
         id: usize,
         int_value: i64,
+        library_id: usize,
         name: String,
-        attributes: Vec<Attribute>,
+        peripheral: Peripheral,
     }
 
     fn set_up() -> Context {
         let (id, name, int_value, float_value) = (0, String::from("foo"), 42, 42.42);
+        let library_id = 1;
         let attributes = vec![
             Attribute::Int {
                 id: id,
@@ -275,12 +340,21 @@ mod tests {
             },
         ];
 
+        let peripheral = Peripheral {
+            library_id: library_id,
+            name: name.clone(),
+            attributes: attributes.clone(),
+            id: id,
+        };
+
         Context {
-            id,
-            name,
-            int_value,
-            float_value,
             attributes,
+            float_value,
+            id,
+            int_value,
+            library_id,
+            name,
+            peripheral,
         }
     }
 }
