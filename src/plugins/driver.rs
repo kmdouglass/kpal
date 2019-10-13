@@ -43,10 +43,8 @@ pub fn attribute_value(plugin: &Plugin, id: size_t, value: &mut Value) -> ValueR
 ///
 /// * `plugin` - A reference to the Plugin from which an attribute's name will be obtained
 /// * `id` - The attribute's unique ID
-/// * `name` - A buffer into which the attribute's name will be copied
-pub fn attribute_name(plugin: &Plugin, id: size_t, name: &mut [u8]) -> NameResult {
-    // Reset all bytes to prevent accidental truncation of the name from previous iterations.
-    name.iter_mut().for_each(|x| *x = 0);
+pub fn attribute_name(plugin: &Plugin, id: size_t) -> NameResult {
+    let mut name = [0u8; ATTRIBUTE_NAME_BUFFER_LENGTH];
 
     let result = (plugin.vtable.attribute_name)(
         plugin.peripheral,
@@ -86,6 +84,7 @@ pub fn attribute_name(plugin: &Plugin, id: size_t, name: &mut [u8]) -> NameResul
 }
 
 /// Represents the state of a result obtained by fetching a value from an attribute.
+#[derive(Debug, PartialEq)]
 pub enum ValueResult {
     Success,
     DoesNotExist,
@@ -93,8 +92,139 @@ pub enum ValueResult {
 }
 
 /// Represents the state of a result obtained by fetching a name from an attribute.
+#[derive(Debug, PartialEq)]
 pub enum NameResult {
     Success(String),
     DoesNotExist,
     Failure,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::boxed::Box;
+
+    use kpal_plugin::{Peripheral, Plugin, VTable, Value};
+    use libc::{c_int, c_uchar, size_t};
+
+    use crate::plugins::driver::{NameResult, ValueResult};
+
+    #[test]
+    fn test_attribute_name() {
+        let mut plugin = set_up();
+        let cases: Vec<(
+            NameResult,
+            extern "C" fn(*const Peripheral, size_t, *mut c_uchar, size_t) -> c_int,
+        )> = vec![
+            (NameResult::Success(String::from("")), attribute_name_ok),
+            (NameResult::DoesNotExist, attribute_name_does_not_exist),
+            (NameResult::Failure, attribute_name_failure),
+        ];
+
+        let mut result: NameResult;
+        for (expected, case) in cases {
+            plugin.vtable.attribute_name = case;
+            result = attribute_name(&plugin, 0);
+            assert_eq!(expected, result);
+        }
+
+        tear_down(plugin);
+    }
+
+    #[test]
+    fn test_attribute_value() {
+        let mut plugin = set_up();
+        let cases: Vec<(
+            ValueResult,
+            extern "C" fn(*const Peripheral, size_t, *mut Value) -> c_int,
+        )> = vec![
+            (ValueResult::Success, attribute_value_ok),
+            (ValueResult::DoesNotExist, attribute_value_does_not_exist),
+            (ValueResult::Failure, attribute_value_failure),
+        ];
+
+        let mut value = Value::Int(0);
+        let mut result: ValueResult;
+        for (expected, case) in cases {
+            plugin.vtable.attribute_value = case;
+            result = attribute_value(&plugin, 0, &mut value);
+            assert_eq!(expected, result);
+        }
+
+        tear_down(plugin);
+    }
+
+    fn set_up() -> Plugin {
+        let peripheral = Box::into_raw(Box::new(MockPeripheral {})) as *mut Peripheral;
+        let vtable = VTable {
+            peripheral_free: def_peripheral_free,
+            attribute_name: def_attribute_name,
+            attribute_value: def_attribute_value,
+            set_attribute_value: def_set_attribute_value,
+        };
+        Plugin { peripheral, vtable }
+    }
+
+    fn tear_down(plugin: Plugin) {
+        unsafe { Box::from_raw(plugin.peripheral) };
+    }
+
+    struct MockPeripheral {}
+
+    // Default function pointers for the vtable
+    extern "C" fn def_peripheral_free(_: *mut Peripheral) {}
+    extern "C" fn def_attribute_name(
+        _: *const Peripheral,
+        _: size_t,
+        _: *mut c_uchar,
+        _: size_t,
+    ) -> c_int {
+        0
+    }
+    extern "C" fn def_attribute_value(_: *const Peripheral, _: size_t, _: *mut Value) -> c_int {
+        0
+    }
+    extern "C" fn def_set_attribute_value(_: *mut Peripheral, _: size_t, _: *const Value) -> c_int {
+        0
+    }
+
+    // Function pointers used by different test cases
+    extern "C" fn attribute_name_ok(
+        _: *const Peripheral,
+        _: size_t,
+        _: *mut c_uchar,
+        _: size_t,
+    ) -> c_int {
+        PERIPHERAL_OK
+    }
+    extern "C" fn attribute_name_does_not_exist(
+        _: *const Peripheral,
+        _: size_t,
+        _: *mut c_uchar,
+        _: size_t,
+    ) -> c_int {
+        PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST
+    }
+    extern "C" fn attribute_name_failure(
+        _: *const Peripheral,
+        _: size_t,
+        _: *mut c_uchar,
+        _: size_t,
+    ) -> c_int {
+        999
+    }
+    extern "C" fn attribute_value_ok(_: *const Peripheral, _: size_t, _: *mut Value) -> c_int {
+        PERIPHERAL_OK
+    }
+    extern "C" fn attribute_value_does_not_exist(
+        _: *const Peripheral,
+        _: size_t,
+        _: *mut Value,
+    ) -> c_int {
+        PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST
+    }
+    extern "C" fn attribute_value_failure(_: *const Peripheral, _: size_t, _: *mut Value) -> c_int {
+        999
+    }
 }
