@@ -193,29 +193,72 @@ mod tests {
 
     #[test]
     fn test_attribute_from() {
-        let (id, name) = (0, String::from("foo"));
-        let cases = vec![
-            (
-                Value::Int(42),
-                Attribute::Int {
-                    id: id,
-                    name: name.clone(),
-                    value: 42,
-                },
-            ),
-            (
-                Value::Float(42.42),
-                Attribute::Float {
-                    id: id,
-                    name: name.clone(),
-                    value: 42.42,
-                },
-            ),
+        let context = set_up();
+        let values = vec![
+            Value::Int(context.int_value),
+            Value::Float(context.float_value),
         ];
+        let cases = values.into_iter().zip(context.attributes);
 
         for (value, attr) in cases {
-            let converted_attr = Attribute::from(value, id, name.clone());
+            let converted_attr = Attribute::from(value, context.id, context.name.clone());
             assert_eq!(attr, converted_attr);
+        }
+    }
+
+    #[test]
+    fn test_attribute_id() {
+        let context = set_up();
+        let names = vec![context.id, context.id];
+        let cases = names.into_iter().zip(context.attributes);
+
+        for case in cases {
+            let (id, attr) = case;
+            assert_eq!(id, attr.id());
+        }
+    }
+
+    #[test]
+    fn test_attribute_name() {
+        let context = set_up();
+        let names = vec![context.name.clone(), context.name.clone()];
+        let cases = names.into_iter().zip(context.attributes);
+
+        for case in cases {
+            let (name, attr) = case;
+            assert_eq!(name, attr.name());
+        }
+    }
+
+    struct Context {
+        id: usize,
+        name: String,
+        int_value: i64,
+        float_value: f64,
+        attributes: Vec<Attribute>,
+    }
+
+    fn set_up() -> Context {
+        let (id, name, int_value, float_value) = (0, String::from("foo"), 42, 42.42);
+        let attributes = vec![
+            Attribute::Int {
+                id: id,
+                name: name.clone(),
+                value: int_value,
+            },
+            Attribute::Float {
+                id: id,
+                name: name.clone(),
+                value: float_value,
+            },
+        ];
+
+        Context {
+            id,
+            name,
+            int_value,
+            float_value,
+            attributes,
         }
     }
 }
