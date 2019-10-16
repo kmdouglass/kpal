@@ -141,7 +141,7 @@ impl AttributeError {
     ///
     /// # Arguments
     ///
-    /// * `action` - The type of action that was performend on the attribute
+    /// * `action` - The type of action that was performed on the attribute
     /// * `error_code` - The error code that was returned by the plugin API
     /// * `message` - A description of the error intended for human consumption
     pub fn new(action: Action, error_code: c_int, message: &str) -> AttributeError {

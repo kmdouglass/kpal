@@ -62,9 +62,14 @@ pub fn routes(
                 handlers::get_peripheral_attributes(id, txs.clone()).unwrap_or_else(log_404)
             },
 
-            (GET) (/api/v0/peripherals/{id: usize}/attributes/{attr_id}) => {
+            (GET) (/api/v0/peripherals/{id: usize}/attributes/{attr_id: usize}) => {
                 log::info!("GET /api/v0/peripherals/{}/attributes/{}", id, attr_id);
                 handlers::get_peripheral_attribute(id, attr_id, txs.clone()).unwrap_or_else(log_404)
+            },
+
+            (PATCH) (/api/v0/peripherals/{id: usize}/attributes/{attr_id: usize}) => {
+                log::info!("PATCH /api/v0/peripherals/{}/attributes/{}", id, attr_id);
+                handlers::patch_peripheral_attribute(&request, id, attr_id, txs.clone()).unwrap_or_else(log_404)
             },
 
             _ => Response::empty_404()

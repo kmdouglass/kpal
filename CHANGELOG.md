@@ -6,8 +6,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased] - 2019-11-23
 ### Added
-- Added a `CHANGELOG.md` file to track project changes.
+- A `CHANGELOG.md` file to track project changes.
 - An integration test that checks all the endpoints in the user API is now running on the CI.
+- The `PATCH /api/v0/peripherals/*/attributes/*` endpoint and the ability to set attribute values.
 
 ### Removed
 - All dependencies on an external database. This should increase portability and simplify some
