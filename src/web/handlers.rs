@@ -3,11 +3,13 @@
 use std::boxed::Box;
 use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 
 use redis;
 use rouille::input::json::json_input;
 use rouille::{Request, Response};
 
+use crate::init::transmitters::Transmitters;
 use crate::models::database::{Count, Query};
 use crate::models::Library;
 use crate::models::{Attribute, Peripheral};
@@ -57,6 +59,7 @@ pub fn post_peripherals(
     client: &redis::Client,
     db: &redis::Connection,
     libs: &Vec<TSLibrary>,
+    txs: Arc<Transmitters>,
 ) -> Result<Response> {
     let mut periph: Peripheral =
         json_input(&request).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
@@ -75,7 +78,8 @@ pub fn post_peripherals(
         Peripheral::count_and_incr(&db).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
     periph.set_id(id);
 
-    init_plugin(&mut periph, client, lib).map_err(|e| RequestHandlerError { side: Box::new(e) })?;
+    init_plugin(&mut periph, client, lib, txs)
+        .map_err(|e| RequestHandlerError { side: Box::new(e) })?;
 
     let mut response = Response::text("The peripheral has been created.\n");
     response.status_code = 201;
