@@ -3,7 +3,7 @@
 //! The user API is defined in this module. It is a REST API whose endpoints correspond to the
 //! resources of the object model (peripherals, libraries, etc.).
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use log;
 use redis;
@@ -26,7 +26,7 @@ pub fn routes(
     client: &redis::Client,
     db: &redis::Connection,
     libs: &Vec<TSLibrary>,
-    txs: Arc<Transmitters>,
+    txs: Arc<RwLock<Transmitters>>,
 ) -> Response {
     router!(request,
 
@@ -53,7 +53,7 @@ pub fn routes(
 
             (POST) (/api/v0/peripherals) => {
                 log::info!("POST /api/v0/peripherals");
-                handlers::post_peripherals(&request, &client, &db, &libs, txs).unwrap_or_else(log_404)
+                handlers::post_peripherals(&request, &client, &db, &libs, txs.clone()).unwrap_or_else(log_404)
             },
 
             (GET) (/api/v0/peripherals/{id: usize}) => {
@@ -68,7 +68,7 @@ pub fn routes(
 
             (GET) (/api/v0/peripherals/{id: usize}/attributes/{attr_id}) => {
                 log::info!("GET /api/v0/peripherals/{}/attributes/{}", id, attr_id);
-                handlers::get_peripheral_attribute(&db, id, attr_id).unwrap_or_else(log_404)
+                handlers::get_peripheral_attribute(id, attr_id, txs.clone()).unwrap_or_else(log_404)
             },
 
             _ => Response::empty_404()

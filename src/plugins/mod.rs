@@ -12,7 +12,7 @@ mod scheduler;
 
 use std::error::Error;
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use libloading::Symbol;
 
@@ -43,7 +43,7 @@ pub fn init(
     peripheral: &mut Peripheral,
     client: &redis::Client,
     lib: TSLibrary,
-    txs: Arc<Transmitters>,
+    txs: Arc<RwLock<Transmitters>>,
 ) -> std::result::Result<(), PluginInitError> {
     let plugin: Plugin = unsafe { kpal_plugin_init(lib.clone())? };
 

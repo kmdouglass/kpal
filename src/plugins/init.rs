@@ -9,7 +9,7 @@ use kpal_plugin::Value;
 use crate::constants::*;
 use crate::models::database::Query;
 use crate::models::{Attribute, Peripheral};
-use crate::plugins::driver::{attribute_name, attribute_value, NameResult, ValueResult};
+use crate::plugins::driver::{attribute_name, attribute_value, NameError, ValueError};
 use crate::plugins::scheduler::{Scheduler, Task};
 use crate::plugins::Plugin;
 
@@ -28,21 +28,25 @@ pub fn attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
 
     loop {
         match attribute_value(plugin, index, &mut value) {
-            ValueResult::Success => (),
-            ValueResult::DoesNotExist => break,
-            ValueResult::Failure => {
-                index += 1;
-                continue;
-            }
+            Ok(_) => (),
+            Err(err) => match err {
+                ValueError::DoesNotExist => break,
+                ValueError::Failure => {
+                    index += 1;
+                    continue;
+                }
+            },
         };
 
         let name = match attribute_name(plugin, index) {
-            NameResult::Success(name) => name,
-            NameResult::DoesNotExist => break,
-            NameResult::Failure => {
-                index += 1;
-                continue;
-            }
+            Ok(name) => name,
+            Err(err) => match err {
+                NameError::DoesNotExist => break,
+                NameError::Failure => {
+                    index += 1;
+                    continue;
+                }
+            },
         };
 
         attr.push(Attribute::from(value.clone(), index, name));
@@ -91,7 +95,7 @@ fn attribute_value_callback(id: usize) -> impl Fn(&mut Peripheral, &Plugin) {
     move |peripheral: &mut Peripheral, plugin: &Plugin| {
         let mut value = Value::Int(0);
         match attribute_value(plugin, id, &mut value) {
-            ValueResult::Success => peripheral.set_attribute_from_value(id, value),
+            Ok(_) => peripheral.set_attribute_from_value(id, value),
             _ => (),
         };
     }
