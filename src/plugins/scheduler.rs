@@ -1,6 +1,7 @@
 use std::boxed::Box;
 use std::error::Error;
 use std::fmt;
+use std::sync::mpsc::channel;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -9,6 +10,7 @@ use redis;
 
 use crate::models::database::Query;
 use crate::models::Peripheral;
+use crate::plugins::messaging::{Receiver, Transmitter};
 use crate::plugins::Plugin;
 
 /// A single task to be executed by the scheduler.
@@ -67,7 +69,7 @@ unsafe impl Send for Task {}
 ///
 /// Each Plugin is powered by a single scheduler.
 pub struct Scheduler {
-    /// The Plugin instance that is managed by this Scheduler.
+    /// The Plugin instance that is managed by this scheduler.
     pub plugin: Plugin,
 
     /// A connection to the database.
@@ -76,11 +78,17 @@ pub struct Scheduler {
     /// A copy of a Peripheral. This is used to update the corresponding entry in the database.
     peripheral: Peripheral,
 
+    /// The scheduler's receiver.
+    pub rx: Receiver,
+
     /// The time between the end of one run of the scheduler and the start of the next.
     sleep: Duration,
 
     /// A collection of tasks to periodically execute.
     tasks: Vec<Task>,
+
+    /// The scheduler's transmitter.
+    pub tx: Transmitter,
 }
 
 impl Scheduler {
@@ -100,13 +108,16 @@ impl Scheduler {
         sleep: Duration,
     ) -> Scheduler {
         let tasks: Vec<Task> = Vec::new();
+        let (tx, rx) = channel();
 
         Scheduler {
             plugin,
             db,
             peripheral,
+            rx,
             sleep,
             tasks,
+            tx,
         }
     }
 
@@ -154,6 +165,13 @@ impl Scheduler {
                         count += 1;
                     }
                 }
+
+                log::debug!(
+                    "Checking for messages for peripheral: {}",
+                    scheduler.peripheral.id()
+                );
+                // TODO Change this to recv when message passing if fully implemented
+                let _ = scheduler.rx.try_recv();
 
                 // Only update the database entry if something happened.
                 if count != 0 {

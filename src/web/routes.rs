@@ -3,10 +3,13 @@
 //! The user API is defined in this module. It is a REST API whose endpoints correspond to the
 //! resources of the object model (peripherals, libraries, etc.).
 
+use std::sync::Arc;
+
 use log;
 use redis;
 use rouille::{router, Request, Response};
 
+use crate::init::transmitters::Transmitters;
 use crate::plugins::TSLibrary;
 use crate::web::handlers;
 
@@ -17,11 +20,13 @@ use crate::web::handlers;
 /// * `request` - The object containing the information concerning the client's request
 /// * `db` - A connection to the database
 /// * `libs` The set of libraries that is currently open by the daemon
+/// * `transmitters` The set of transmitters for sending messages into each peripheral thread
 pub fn routes(
     request: &Request,
     client: &redis::Client,
     db: &redis::Connection,
     libs: &Vec<TSLibrary>,
+    txs: Arc<Transmitters>,
 ) -> Response {
     router!(request,
 
@@ -48,7 +53,7 @@ pub fn routes(
 
             (POST) (/api/v0/peripherals) => {
                 log::info!("POST /api/v0/peripherals");
-                handlers::post_peripherals(&request, &client, &db, &libs).unwrap_or_else(log_404)
+                handlers::post_peripherals(&request, &client, &db, &libs, txs).unwrap_or_else(log_404)
             },
 
             (GET) (/api/v0/peripherals/{id: usize}) => {
