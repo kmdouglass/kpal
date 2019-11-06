@@ -8,7 +8,7 @@ use std::error::Error;
 use std::fmt;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 
 use dirs::home_dir;
 use lazy_static::lazy_static;
@@ -60,7 +60,7 @@ pub struct Init {
     pub client: redis::Client,
     pub db: Mutex<redis::Connection>,
     pub libraries: Vec<TSLibrary>,
-    pub transmitters: transmitters::Transmitters,
+    pub transmitters: RwLock<transmitters::Transmitters>,
 }
 
 /// Initializes the daemon.
@@ -77,7 +77,7 @@ pub fn init(args: &Cli) -> Result<Init> {
         library::init(&args.library_dir).map_err(|e| InitError { side: Box::new(e) })?;
     let (client, db) =
         database::init(&args.db_addr, &libraries).map_err(|e| InitError { side: Box::new(e) })?;
-    let transmitters = transmitters::init();
+    let transmitters = RwLock::new(transmitters::init());
 
     Ok(Init {
         client,

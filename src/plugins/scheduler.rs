@@ -166,13 +166,6 @@ impl Scheduler {
                     }
                 }
 
-                log::debug!(
-                    "Checking for messages for peripheral: {}",
-                    scheduler.peripheral.id()
-                );
-                // TODO Change this to recv when message passing if fully implemented
-                let _ = scheduler.rx.try_recv();
-
                 // Only update the database entry if something happened.
                 if count != 0 {
                     log::debug!(
@@ -184,6 +177,14 @@ impl Scheduler {
                         Err(e) => log::error!("{}", e),
                     };
                 }
+
+                // TODO Remove the above code and keep what is below when messaging is implemented.
+                log::debug!(
+                    "Checking for messages for peripheral: {}",
+                    scheduler.peripheral.id()
+                );
+                let msg = scheduler.rx.recv().map_err(|_| SchedulerRuntimeError {})?;
+                msg.handle(&mut scheduler.peripheral, &scheduler.plugin);
 
                 thread::sleep(scheduler.sleep);
             }
