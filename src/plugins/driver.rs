@@ -8,8 +8,9 @@ use memchr::memchr;
 use kpal_plugin::constants::*;
 use kpal_plugin::Value;
 
+use super::Plugin;
+
 use crate::constants::*;
-use crate::plugins::Plugin;
 
 /// Returns the value of an attribute from a Plugin.
 ///

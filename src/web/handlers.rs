@@ -113,13 +113,22 @@ pub fn get_peripheral_attribute(
 }
 
 /// Handles the GET /api/v0/peripherals/{id}/attributes endpoint.
-pub fn get_peripheral_attributes(db: &redis::Connection, id: usize) -> Result<Response> {
-    Peripheral::get(&db, id)?
-        .map(|p| Response::json(p.attributes()))
+pub fn get_peripheral_attributes(id: usize, txs: Arc<RwLock<Transmitters>>) -> Result<Response> {
+    let txs = txs.read()?;
+    let ptx = txs
+        .get(&id)
         .ok_or(ResourceNotFoundError {
             id: id,
-            name: String::from("attributes"),
-        })
+            name: String::from(Peripheral::key()),
+        })?
+        .lock()?;
+
+    let (tx, rx) = channel();
+    let msg = Message::GetPeripheralAttributes(tx);
+    ptx.send(msg)?;
+
+    rx.recv_timeout(REQUEST_TIMEOUT)?
+        .map(|attr| Response::json(&attr))
         .map_err(|e| RequestHandlerError::from(e))
 }
 

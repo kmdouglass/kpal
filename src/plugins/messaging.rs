@@ -7,10 +7,11 @@ use std::sync::mpsc::Sender;
 use kpal_plugin::Value;
 use log;
 
+use super::driver::{attribute_value, NameError, ValueError};
+use super::Plugin;
+
 use crate::models::database::Query;
 use crate::models::{Attribute, Peripheral};
-use crate::plugins::driver::{attribute_value, NameError, ValueError};
-use crate::plugins::Plugin;
 
 /// Represents a single receiver that is owned by a peripheral.
 pub type Receiver = Recv<Message>;
@@ -21,39 +22,77 @@ pub type Transmitter = Sender<Message>;
 /// A message that is passed from a request handler to a peripheral.
 pub enum Message {
     GetPeripheralAttribute(usize, Sender<Result<Attribute, PluginError>>),
+    GetPeripheralAttributes(Sender<Result<Vec<Attribute>, PluginError>>),
 }
 
 impl Message {
     /// Perform the action requested by a message and transmit the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `peripheral` - The peripheral to communicate with
+    /// * `plugin` - The plugin that communicates with the peripheral
     pub fn handle(&self, peripheral: &mut Peripheral, plugin: &Plugin) {
         match self {
             Message::GetPeripheralAttribute(id, tx) => {
-                let mut value = Value::Int(0);
-                let result = match attribute_value(plugin, *id, &mut value) {
-                    // TODO Use combinators instead
-                    Ok(_) => {
-                        log::debug!(
-                            "Retrieved value {:?} from peripheral {}",
-                            value,
-                            peripheral.id()
-                        );
-                        peripheral.set_attribute_from_value(*id, value);
-                        let attr = &peripheral.attributes()[*id];
-
-                        Ok(attr.clone())
-                    }
-                    Err(err) => {
-                        log::error!("Message handler error: {:?}", err);
-                        let err = PluginError::from(err);
-
-                        Err(err)
-                    }
-                };
+                let result = get_attribute_value(peripheral, plugin, *id);
 
                 log_and_send(tx.clone(), result, peripheral.id());
             }
+
+            Message::GetPeripheralAttributes(tx) => {
+                let ids = {
+                    let attrs = peripheral.attributes();
+                    let mut ids = Vec::new();
+                    for attr in attrs {
+                        ids.push(attr.id());
+                    }
+                    ids
+                };
+
+                let mut attrs = Vec::new();
+                for id in &ids {
+                    let result = get_attribute_value(peripheral, plugin, *id);
+                    attrs.push(result);
+                }
+
+                log_and_send(tx.clone(), attrs.into_iter().collect(), peripheral.id());
+            }
         };
     }
+}
+
+/// Wraps the driver's attribute_value function.
+///
+/// This function is provided for ergonomics. It keeps the `handle()` function DRY and easier to
+/// read.
+///
+/// # Arguments
+///
+/// * `peripheral` - The peripheral will be updated after the value is successfully obtained
+/// * `plugin` - The attribute is fetched using the API call provided by this plugin instance
+/// * `id` - The id of the attribute to fetch
+fn get_attribute_value(
+    peripheral: &mut Peripheral,
+    plugin: &Plugin,
+    id: usize,
+) -> Result<Attribute, PluginError> {
+    let mut value = Value::Int(0);
+    attribute_value(plugin, id, &mut value)
+        .map(|_| {
+            log::debug!(
+                "Retrieved value {:?} from peripheral {}",
+                value,
+                peripheral.id(),
+            );
+            peripheral.set_attribute_from_value(id, value);
+            let attr = &peripheral.attributes()[id];
+            attr.clone()
+        })
+        .map_err(|e| {
+            log::error!("Message handler error: {:?}", e);
+            PluginError::from(e)
+        })
 }
 
 /// Sends a response back to the requesting thread.
