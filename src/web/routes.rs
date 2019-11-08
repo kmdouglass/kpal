@@ -63,7 +63,7 @@ pub fn routes(
 
             (GET) (/api/v0/peripherals/{id: usize}/attributes) => {
                 log::info!("GET /api/v0/peripherals/{}/attributes", id);
-                handlers::get_peripheral_attributes(&db, id).unwrap_or_else(log_404)
+                handlers::get_peripheral_attributes(id, txs.clone()).unwrap_or_else(log_404)
             },
 
             (GET) (/api/v0/peripherals/{id: usize}/attributes/{attr_id}) => {
