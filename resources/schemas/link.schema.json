@@ -1,0 +1,14 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://raw.githubusercontent.com/kmdouglass/kpal/master/resources/schemas/link.schema.json",
+    "title": "Link",
+    "description": "A link to a related resource",
+    "type": "object",
+    "properties": {
+	"href" : {
+	    "description": "A hyperlink to the resource",
+	    "type": "string"
+	}
+    },
+    "required": [ "href" ]
+}

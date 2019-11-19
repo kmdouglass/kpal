@@ -10,7 +10,7 @@ use log;
 use super::driver::{attribute_value, NameError, ValueError};
 use super::Plugin;
 
-use crate::models::database::Query;
+use crate::models::Model;
 use crate::models::{Attribute, Peripheral};
 
 /// Represents a single receiver that is owned by a peripheral.
@@ -21,6 +21,7 @@ pub type Transmitter = Sender<Message>;
 
 /// A message that is passed from a request handler to a peripheral.
 pub enum Message {
+    GetPeripheral(Sender<Result<Peripheral, PluginError>>),
     GetPeripheralAttribute(usize, Sender<Result<Attribute, PluginError>>),
     GetPeripheralAttributes(Sender<Result<Vec<Attribute>, PluginError>>),
 }
@@ -34,6 +35,10 @@ impl Message {
     /// * `plugin` - The plugin that communicates with the peripheral
     pub fn handle(&self, peripheral: &mut Peripheral, plugin: &Plugin) {
         match self {
+            Message::GetPeripheral(tx) => {
+                log_and_send(tx.clone(), Ok(peripheral.clone()), peripheral.id())
+            }
+
             Message::GetPeripheralAttribute(id, tx) => {
                 let result = get_attribute_value(peripheral, plugin, *id);
 

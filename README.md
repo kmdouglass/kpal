@@ -31,16 +31,18 @@ include:
 ### Daemon
 
 The KPAL daemon, or `kpald`, is a web server that runs on the computer to which the peripherals are
-connected. Users directly interact with the daemon through the user API. The daemon in turn
-reads/writes data to individual plugins through the plugin API using shared libraries. `kpald` uses
-a database to store the most-recent snapshot of a peripheral's state, among other things.
+connected. Users directly interact with the daemon through the user API. Each peripheral runs
+inside its own thread which is spawned by a POST request to the user API. The daemon forwards other
+user requests to each thread through the thread's dedicated channel. The threads interpret the
+incoming requests and, in response, read and write data to individual plugins through the plugin
+API using shared libraries.
 
 ### Plugins
 
-Peripherals are integrated into KPAL as plugins. A plugin uses a shared library (a `.so` file on
-Linux) to communicate with the daemon. The common set of functions that the library provides is the
-plugin API. Any programming language that can provide a C language interface can be used to write a
-plugin library.
+Plugins are the means by which peripherals are integrated into KPAL. A plugin uses a shared library
+(a `.so` file on Linux) to communicate with the daemon. The common set of functions that the
+library provides is the plugin API. Any programming language that can provide a C language
+interface can be used to write a plugin library.
 
 ## Writing plugins
 

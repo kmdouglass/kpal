@@ -15,7 +15,7 @@
    version="1.1"
    id="svg8"
    inkscape:version="0.92.3 (2405546, 2018-03-11)"
-   sodipodi:docname="kpal.svg">
+   sodipodi:docname="high_level_architecture.svg">
   <defs
      id="defs2">
     <marker
@@ -149,8 +149,8 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="2.8"
-     inkscape:cx="118.82539"
-     inkscape:cy="149.24192"
+     inkscape:cx="252.79798"
+     inkscape:cy="120.67049"
      inkscape:document-units="mm"
      inkscape:current-layer="layer1"
      showgrid="true"
@@ -189,7 +189,7 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title></dc:title>
+        <dc:title />
       </cc:Work>
     </rdf:RDF>
   </metadata>
@@ -225,17 +225,6 @@
          x="86.273979"
          y="84.847229"
          style="stroke-width:0.26458332">KPAL Daemon</tspan></text>
-    <text
-       xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:4.23333311px;line-height:1.25;font-family:FreeSans;-inkscape-font-specification:FreeSans;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.26458332"
-       x="127.39252"
-       y="85.111824"
-       id="text4551"><tspan
-         sodipodi:role="line"
-         id="tspan4549"
-         x="127.39252"
-         y="85.111824"
-         style="stroke-width:0.26458332">Database</tspan></text>
     <path
        inkscape:connector-curvature="0"
        id="path4553"
@@ -294,10 +283,5 @@
        id="path4911"
        d="m 100,89.598594 v 8.724109"
        style="fill:none;stroke:#000000;stroke-width:0.5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#marker4915);marker-end:url(#marker4943)" />
-    <path
-       inkscape:connector-curvature="0"
-       id="path9299"
-       d="m 125.42632,83.617457 h -9.7341"
-       style="fill:none;stroke:#000000;stroke-width:0.5;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-start:url(#marker9303);marker-end:url(#marker9355)" />
   </g>
 </svg>

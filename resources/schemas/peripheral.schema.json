@@ -17,14 +17,14 @@
 	    "description": "The ID of the peripheral's shared library file",
 	    "type": "integer"
 	},
-	"attributes" : {
-	    "description": "An attribute is a value that partly defines the state of a peripheral",
-	    "type": "array",
-	    "items": {
-		"$ref": "#/attribute.schema.json"
-	    },
-	    "default": []
-	}
+        "links": {
+            "description": "Hyperlinks to resources related to the peripheral",
+            "type": "array",
+            "items": {
+	        "$ref": "#/link.schema.json"
+            },
+            "default": []
+        }
     },
-    "required": [ "id", "name", "library_id", "attributes" ]
+    "required": [ "id", "name", "library_id", "attributes", "links" ]
 }

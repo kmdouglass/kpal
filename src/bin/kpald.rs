@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use env_logger;
 use log;
-use rouille::Response;
 use structopt::StructOpt;
 
 use kpal::init::{init, Cli, Init};
@@ -14,8 +13,6 @@ fn main() {
     let args = Cli::from_args();
 
     let Init {
-        client,
-        db,
         libraries,
         transmitters,
     } = match init(&args) {
@@ -30,13 +27,9 @@ fn main() {
 
     log::info!("Launching the server at {}...", &args.server_addr);
     rouille::start_server(&args.server_addr, move |request| {
-        let db = match db.lock() {
-            Ok(db) => db,
-            Err(_) => return Response::text("Internal server error (500)").with_status_code(500),
-        };
         let transmitters = transmitters.clone();
 
-        let response = routes(&request, &client, &db, &libraries, transmitters);
+        let response = routes(&request, &libraries, transmitters);
 
         response
     });

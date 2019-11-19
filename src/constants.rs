@@ -6,5 +6,3 @@ pub const DATABASE_INDEX: &str = "0";
 pub const KPAL_DIR: &str = ".kpal";
 pub const LIBRARY_DIR: &str = "libraries";
 pub const REQUEST_TIMEOUT: Duration = Duration::from_millis(5000);
-pub const SCHEDULER_SLEEP_DURATION: Duration = Duration::from_secs(1);
-pub const TASK_INTERVAL_DURATION: Duration = Duration::from_secs(5);
