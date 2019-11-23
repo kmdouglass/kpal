@@ -233,8 +233,8 @@ impl fmt::Display for ResourceNotFoundError {
 /// An error raised when processing a request.
 #[derive(Debug)]
 pub struct RequestHandlerError {
-    body: String,
-    http_status_code: u16,
+    pub body: String,
+    pub http_status_code: u16,
 }
 
 impl Error for RequestHandlerError {}
