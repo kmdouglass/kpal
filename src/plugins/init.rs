@@ -26,8 +26,8 @@ pub fn attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
         match attribute_value(plugin, index, &mut value) {
             Ok(_) => (),
             Err(err) => match err {
-                ValueError::DoesNotExist => break,
-                ValueError::Failure => {
+                ValueError::DoesNotExist(_) => break,
+                ValueError::Failure(_) => {
                     index += 1;
                     continue;
                 }
@@ -37,8 +37,8 @@ pub fn attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
         let name = match attribute_name(plugin, index) {
             Ok(name) => name,
             Err(err) => match err {
-                NameError::DoesNotExist => break,
-                NameError::Failure => {
+                NameError::DoesNotExist(_) => break,
+                NameError::Failure(_) => {
                     index += 1;
                     continue;
                 }
@@ -95,6 +95,7 @@ mod tests {
 
         let vtable = VTable {
             peripheral_free: def_peripheral_free,
+            error_message: def_error_message,
             attribute_name: def_attribute_name,
             attribute_value: def_attribute_value,
             set_attribute_value: def_set_attribute_value,
@@ -121,6 +122,11 @@ mod tests {
 
     // Default function pointers for the vtable
     extern "C" fn def_peripheral_free(_: *mut Peripheral) {}
+
+    extern "C" fn def_error_message(_: c_int) -> *const c_uchar {
+        b"foo\0" as *const c_uchar
+    }
+
     extern "C" fn def_attribute_name(
         _: *const Peripheral,
         id: size_t,
@@ -133,9 +139,9 @@ mod tests {
                 let buffer = std::slice::from_raw_parts_mut(buffer, ATTRIBUTE_NAME_BUFFER_LENGTH);
                 &buffer[0..4].copy_from_slice(string);
             };
-            PERIPHERAL_OK
+            PLUGIN_OK
         } else {
-            PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST
+            ATTRIBUTE_DOES_NOT_EXIST
         }
     }
     extern "C" fn def_attribute_value(
@@ -145,9 +151,9 @@ mod tests {
     ) -> c_int {
         if id == 0 {
             unsafe { *value = Value::Int(42) };
-            PERIPHERAL_OK
+            PLUGIN_OK
         } else {
-            PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST
+            ATTRIBUTE_DOES_NOT_EXIST
         }
     }
     extern "C" fn def_set_attribute_value(_: *mut Peripheral, _: size_t, _: *const Value) -> c_int {

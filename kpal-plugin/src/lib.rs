@@ -3,17 +3,16 @@
 //! See the examples folder for ideas on how to implement the datatypes and methods defined in this
 //! library.
 pub mod constants {
+    // TODO Move these inside the errors module and get rid of the constants module
     //! Constants and return codes used by Plugins to communicate the result of function calls.
     use libc::c_int;
 
-    pub const LIBRARY_OK: c_int = 0;
-    pub const LIBRARY_ERR: c_int = 1;
-
-    pub const PERIPHERAL_OK: c_int = 0;
-    pub const PERIPHERAL_ERR: c_int = 1;
-    pub const PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST: c_int = 2;
-    pub const PERIPHERAL_COULD_NOT_SET_ATTRIBUTE: c_int = 3;
+    pub const PLUGIN_OK: c_int = 0;
+    pub const UNDEFINED_ERR: c_int = 1;
+    pub const ATTRIBUTE_DOES_NOT_EXIST: c_int = 2;
+    pub const ATTRIBUTE_TYPE_MISMATCH: c_int = 3;
 }
+mod errors;
 pub mod strings;
 
 use std::cmp::{Eq, PartialEq};
@@ -22,6 +21,8 @@ use std::ffi::CString;
 use std::fmt;
 
 use libc::{c_double, c_int, c_long, c_uchar, size_t};
+
+pub use errors::ERRORS;
 
 /// A Plugin contains the necessary data to work with a plugin across the FFI boundary.
 ///
@@ -33,7 +34,7 @@ use libc::{c_double, c_int, c_long, c_uchar, size_t};
 ///
 /// The plugin implements the `Send` trait because after creation the plugin is moved into the
 /// thread that is dedicated to the peripheral that it manages. Once it is moved, it will only ever
-/// be owned by this thread by design.
+/// be owned and used by this single thread by design.
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct Plugin {
@@ -70,6 +71,9 @@ pub struct Peripheral {
 pub struct VTable {
     /// Frees the memory associated with a peripheral.
     pub peripheral_free: extern "C" fn(*mut Peripheral),
+
+    /// Returns an error message associated with a Plugin error code.
+    pub error_message: extern "C" fn(c_int) -> *const c_uchar,
 
     /// Writes the name of an attribute to a buffer that is provided by the caller.
     pub attribute_name: extern "C" fn(
@@ -124,14 +128,17 @@ pub enum Value {
 pub type Result<T> = std::result::Result<T, AttributeError>;
 
 /// An AttributeError is raised when there is a failure to get or set a attribute's value.
+// TODO Make this a general Error type
 #[derive(Debug)]
 pub struct AttributeError {
     /// The type of action that was performend on the attribute.
+    // TODO Remove Action as it is not used.
     action: Action,
 
     /// The error code that was returned by the plugin API.
     error_code: c_int,
 
+    // TODO Remove this as it is not used.
     /// A description of the error intended for human consumption.
     message: String,
 }
@@ -155,6 +162,11 @@ impl AttributeError {
     /// Returns the error code of the instance.
     pub fn error_code(&self) -> c_int {
         self.error_code
+    }
+
+    /// Returns the error message.
+    pub fn message(&self) -> &str {
+        &self.message
     }
 }
 

@@ -13,13 +13,16 @@
 //! 4. a set of functions that comprise the plugin API
 // Import any needed items from the standard and 3rd party libraries.
 use std::boxed::Box;
+use std::convert::TryInto;
 use std::ffi::{CStr, CString};
+use std::ptr::null;
 
 use libc::{c_int, c_uchar, size_t};
 
 // Import the tools provided by the plugin library.
 use kpal_plugin::constants::*;
 use kpal_plugin::strings::copy_string;
+use kpal_plugin::Value::*;
 use kpal_plugin::*;
 
 /// The first component of a plugin library is a struct that contains the peripheral's data.
@@ -63,11 +66,12 @@ impl Basic {
     ///
     /// * `id` - the numeric ID of the attribute
     fn attribute_name(&self, id: usize) -> Result<&CStr> {
+        log::debug!("Received request for the name of attribute: {}", id);
         match self.attributes.get(id) {
             Some(attribute) => Ok(&attribute.name),
             None => Err(AttributeError::new(
                 Action::Get,
-                PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST,
+                ATTRIBUTE_DOES_NOT_EXIST,
                 &format!("Attribute at index {} does not exist.", id),
             )),
         }
@@ -83,10 +87,11 @@ impl Basic {
     ///
     /// * `id` - the numeric ID of the attribute
     fn attribute_value(&self, id: usize) -> Result<Value> {
+        log::debug!("Received request for the value of attribute: {}", id);
         let attribute = self.attributes.get(id).ok_or_else(|| {
             AttributeError::new(
                 Action::Get,
-                PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST,
+                ATTRIBUTE_DOES_NOT_EXIST,
                 &format!("Attribute at index {} does not exist.", id),
             )
         })?;
@@ -104,15 +109,14 @@ impl Basic {
     /// * `id` - the numeric ID of the attribute
     /// * `value` - a reference to a value
     fn attribute_set_value(&mut self, id: usize, value: &Value) -> Result<()> {
-        use Value::*;
-
+        log::debug!("Received request to set the value of attribute: {}", id);
         let current_value = &mut self
             .attributes
             .get_mut(id)
             .ok_or_else(|| {
                 AttributeError::new(
                     Action::Get,
-                    PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST,
+                    ATTRIBUTE_DOES_NOT_EXIST,
                     &format!("Attribute at index {} does not exist.", id),
                 )
             })?
@@ -125,15 +129,15 @@ impl Basic {
             }
             _ => Err(AttributeError::new(
                 Action::Set,
-                PERIPHERAL_COULD_NOT_SET_ATTRIBUTE,
-                &format!("Could not set attribute {}", id),
+                ATTRIBUTE_TYPE_MISMATCH,
+                &format!("Attribute types do not match {}", id),
             )),
         }
     }
 }
 
 // The following functions are required. They are used by the daemon to initialize the library and
-// new plugin instances.
+// new plugin instances, as well as to provide error information back to the daemon.
 /// Initializes the library.
 ///
 /// This function is called only once by the daemon. It is called when a library is first loaded
@@ -141,7 +145,7 @@ impl Basic {
 #[no_mangle]
 pub extern "C" fn kpal_library_init() -> c_int {
     env_logger::init();
-    LIBRARY_OK
+    PLUGIN_OK
 }
 
 /// Returns a new Plugin instance containing the peripheral data and the function vtable.
@@ -156,6 +160,7 @@ pub extern "C" fn kpal_plugin_init() -> Plugin {
 
     let vtable = VTable {
         peripheral_free: peripheral_free,
+        error_message: error_message,
         attribute_name: attribute_name,
         attribute_value: attribute_value,
         set_attribute_value: set_attribute_value,
@@ -191,6 +196,21 @@ extern "C" fn peripheral_free(peripheral: *mut Peripheral) {
     }
 }
 
+/// Returns an error message to the daemon given an error code.
+///
+/// If an undefined error code is provided, then this function will return a null pointer.
+pub extern "C" fn error_message(error_code: c_int) -> *const c_uchar {
+    let error_code: size_t = match error_code.try_into() {
+        Ok(error_code) => error_code,
+        Err(_) => {
+            log::error!("Unrecognized error code provided");
+            return null();
+        }
+    };
+
+    ERRORS.get(error_code).map_or(null(), |e| e.as_ptr())
+}
+
 /// Writes the name of an attribute to a buffer that is provided by the caller.
 ///
 /// This function returns a status code that indicates whether the operation succeeded and the
@@ -218,8 +238,8 @@ extern "C" fn attribute_name(
         };
 
         match copy_string(name, buffer, length) {
-            Ok(_) => PERIPHERAL_OK,
-            Err(_) => PERIPHERAL_ERR,
+            Ok(_) => PLUGIN_OK,
+            Err(_) => UNDEFINED_ERR,
         }
     }
 }
@@ -244,11 +264,6 @@ extern "C" fn attribute_value(
     let peripheral = peripheral as *const Basic;
 
     unsafe {
-        log::debug!(
-            "Received request for the value of attribute {} for peripheral: {:?}",
-            id,
-            *peripheral
-        );
         match (*peripheral).attribute_value(id) {
             Ok(new_value) => {
                 log::debug!(
@@ -262,7 +277,7 @@ extern "C" fn attribute_value(
         };
     }
 
-    PERIPHERAL_OK
+    PLUGIN_OK
 }
 
 /// Sets the value of an attribute.
@@ -282,18 +297,13 @@ extern "C" fn set_attribute_value(
     value: *const Value,
 ) -> c_int {
     if peripheral.is_null() || value.is_null() {
-        return PERIPHERAL_ERR;
+        return UNDEFINED_ERR;
     }
     let peripheral = peripheral as *mut Basic;
 
     unsafe {
-        log::debug!(
-            "Received request to set the value of attribute {} for peripheral: {:?}",
-            id,
-            *peripheral
-        );
         match (*peripheral).attribute_set_value(id, &*value) {
-            Ok(_) => PERIPHERAL_OK,
+            Ok(_) => PLUGIN_OK,
             Err(e) => e.error_code(),
         }
     }
@@ -302,6 +312,45 @@ extern "C" fn set_attribute_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_kpal_error() {
+        struct Case {
+            description: &'static str,
+            error_code: c_int,
+            want_null: bool,
+        };
+
+        let cases = vec![
+            Case {
+                description: "a valid error code is passed to kpal_error",
+                error_code: 0,
+                want_null: false,
+            },
+            Case {
+                description: "an invalid and negative error code is passed to kpal_error",
+                error_code: -1,
+                want_null: true,
+            },
+            Case {
+                description: "an invalid and positive error code is passed to kpal_error",
+                error_code: 99999,
+                want_null: true,
+            },
+        ];
+
+        let mut msg: *const c_uchar;
+        for case in &cases {
+            log::info!("{}", case.description);
+            msg = error_message(case.error_code);
+
+            if case.want_null {
+                assert!(msg.is_null());
+            } else {
+                assert!(!msg.is_null());
+            }
+        }
+    }
 
     #[test]
     fn set_attribute_value() {

@@ -39,7 +39,7 @@ pub fn init(
 
     init::attributes(peripheral, &plugin);
 
-    let executor = Executor::new(plugin, peripheral.clone());
+    let executor = Executor::new(plugin, peripheral.clone(), lib.clone());
 
     let tx = Mutex::new(executor.tx.clone());
     txs.write()
@@ -54,6 +54,8 @@ pub fn init(
 }
 
 /// Requests a new Plugin object from the Library.
+///
+/// # Safety
 ///
 /// This function is unsafe because it calls a function that is provided by the shared library
 /// through the FFI.

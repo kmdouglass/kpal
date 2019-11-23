@@ -10,7 +10,7 @@ use kpal_plugin::Value;
 use log;
 
 use super::driver::{attribute_value, set_attribute_value, NameError, SetValueError, ValueError};
-use super::Plugin;
+use super::{Executor, Plugin};
 
 use crate::models::Model;
 use crate::models::{Attribute, Peripheral};
@@ -36,21 +36,21 @@ impl Message {
     ///
     /// * `peripheral` - The peripheral to communicate with
     /// * `plugin` - The plugin that communicates with the peripheral
-    pub fn handle(&self, peripheral: &mut Peripheral, plugin: &Plugin) {
+    pub fn handle(&self, ex: &mut Executor) {
         match self {
             Message::GetPeripheral(tx) => {
-                log_and_send(tx.clone(), Ok(peripheral.clone()), peripheral.id())
+                log_and_send(tx.clone(), Ok(ex.peripheral.clone()), ex.peripheral.id())
             }
 
             Message::GetPeripheralAttribute(id, tx) => {
-                let result = attribute_value_wrapper(peripheral, plugin, *id);
+                let result = attribute_value_wrapper(&mut ex.peripheral, &ex.plugin, *id);
 
-                log_and_send(tx.clone(), result, peripheral.id());
+                log_and_send(tx.clone(), result, ex.peripheral.id());
             }
 
             Message::GetPeripheralAttributes(tx) => {
                 let ids = {
-                    let attrs = peripheral.attributes();
+                    let attrs = ex.peripheral.attributes();
                     let mut ids = Vec::new();
                     for attr in attrs {
                         ids.push(attr.id());
@@ -60,17 +60,18 @@ impl Message {
 
                 let mut attrs = Vec::new();
                 for id in &ids {
-                    let result = attribute_value_wrapper(peripheral, plugin, *id);
+                    let result = attribute_value_wrapper(&mut ex.peripheral, &ex.plugin, *id);
                     attrs.push(result);
                 }
 
-                log_and_send(tx.clone(), attrs.into_iter().collect(), peripheral.id());
+                log_and_send(tx.clone(), attrs.into_iter().collect(), ex.peripheral.id());
             }
 
             Message::PatchPeripheralAttribute(id, value, tx) => {
-                let result = set_attribute_value_wrapper(peripheral, plugin, *id, value);
+                let result =
+                    set_attribute_value_wrapper(&mut ex.peripheral, &ex.plugin, *id, value);
 
-                log_and_send(tx.clone(), result, peripheral.id());
+                log_and_send(tx.clone(), result, ex.peripheral.id());
             }
         };
     }
@@ -174,6 +175,9 @@ fn log_and_send<T: Debug>(
 /// the client about why the requested operation failed.
 #[derive(Debug)]
 pub struct PluginError {
+    /// The body of the HTTP response to return to the client.
+    pub body: String,
+
     /// The HTTP status code that should be returned to the client.
     pub http_status_code: u16,
 }
@@ -182,20 +186,19 @@ impl Error for PluginError {}
 
 impl fmt::Display for PluginError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "An error occured when trying to communicate with the plugin"
-        )
+        write!(f, "PluginError: {:?}", self)
     }
 }
 
 impl From<NameError> for PluginError {
     fn from(error: NameError) -> Self {
         match error {
-            NameError::DoesNotExist => PluginError {
+            NameError::DoesNotExist(msg) => PluginError {
+                body: msg,
                 http_status_code: 404,
             },
-            NameError::Failure => PluginError {
+            NameError::Failure(msg) => PluginError {
+                body: msg,
                 http_status_code: 500,
             },
         }
@@ -205,10 +208,12 @@ impl From<NameError> for PluginError {
 impl From<ValueError> for PluginError {
     fn from(error: ValueError) -> Self {
         match error {
-            ValueError::DoesNotExist => PluginError {
+            ValueError::DoesNotExist(msg) => PluginError {
+                body: msg,
                 http_status_code: 404,
             },
-            ValueError::Failure => PluginError {
+            ValueError::Failure(msg) => PluginError {
+                body: msg,
                 http_status_code: 500,
             },
         }
@@ -218,10 +223,12 @@ impl From<ValueError> for PluginError {
 impl From<SetValueError> for PluginError {
     fn from(error: SetValueError) -> Self {
         match error {
-            SetValueError::DoesNotExist => PluginError {
+            SetValueError::DoesNotExist(msg) => PluginError {
+                body: msg,
                 http_status_code: 404,
             },
-            SetValueError::Failure => PluginError {
+            SetValueError::Failure(msg) => PluginError {
+                body: msg,
                 http_status_code: 500,
             },
         }

@@ -1,7 +1,8 @@
 //! Methods for communicating directly with Plugins.
 use std::ffi::CStr;
+use std::fmt;
 
-use libc::{c_uchar, size_t};
+use libc::{c_char, c_int, c_uchar, size_t};
 use log;
 use memchr::memchr;
 
@@ -28,7 +29,7 @@ pub fn attribute_name(plugin: &Plugin, id: size_t) -> Result<String, NameError> 
         ATTRIBUTE_NAME_BUFFER_LENGTH,
     );
 
-    if result == PERIPHERAL_OK {
+    if result == PLUGIN_OK {
         let name = match memchr(0, &name)
             .ok_or("could not find null byte")
             .and_then(|null_byte| {
@@ -39,22 +40,24 @@ pub fn attribute_name(plugin: &Plugin, id: size_t) -> Result<String, NameError> 
         {
             Ok(name) => name,
             Err(err) => {
-                log::debug!("{}", err);
+                log::error!("{}", err);
                 String::from("Unknown")
             }
         };
 
         log::debug!("Received name: {:?}", name);
         Ok(name)
-    } else if result == PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST {
+    } else if result == ATTRIBUTE_DOES_NOT_EXIST {
         log::debug!("Attribute does not exist: {}", result);
-        Err(NameError::DoesNotExist)
+        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        Err(NameError::DoesNotExist(msg))
     } else {
-        log::debug!(
+        log::error!(
             "Received error code while getting attribute name: {}",
             result
         );
-        Err(NameError::Failure)
+        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        Err(NameError::Failure(msg))
     }
 }
 
@@ -68,19 +71,43 @@ pub fn attribute_name(plugin: &Plugin, id: size_t) -> Result<String, NameError> 
 pub fn attribute_value(plugin: &Plugin, id: size_t, value: &mut Value) -> Result<(), ValueError> {
     let result = (plugin.vtable.attribute_value)(plugin.peripheral, id, value as *mut Value);
 
-    if result == PERIPHERAL_OK {
+    if result == PLUGIN_OK {
         log::debug!("Received value: {:?}", value);
         Ok(())
-    } else if result == PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST {
+    } else if result == ATTRIBUTE_DOES_NOT_EXIST {
         log::debug!("Attribute does not exist: {}", result);
-        Err(ValueError::DoesNotExist)
+        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        Err(ValueError::DoesNotExist(msg))
     } else {
-        log::debug!(
+        log::error!(
             "Received error code while fetching attribute value: {}",
             result
         );
-        Err(ValueError::Failure)
+        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        Err(ValueError::Failure(msg))
     }
+}
+
+/// Requests an error message from a plugin given an error code.
+///
+/// # Safety
+///
+/// This function is unsafe because it calls a function that is provided by the shared library
+/// through the FFI.
+///
+/// # Arguments
+///
+/// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
+unsafe fn error_message(plugin: &Plugin, error_code: c_int) -> Result<String, KpalErrorMsg> {
+    let msg_p = (plugin.vtable.error_message)(error_code) as *const c_char;
+
+    let msg = if msg_p.is_null() {
+        return Err(KpalErrorMsg {});
+    } else {
+        CStr::from_ptr(msg_p).to_str()?.to_owned()
+    };
+
+    Ok(msg)
 }
 
 /// Sets the value of an attribute of a Plugin.
@@ -97,40 +124,58 @@ pub fn set_attribute_value(
 ) -> Result<(), SetValueError> {
     let result = (plugin.vtable.set_attribute_value)(plugin.peripheral, id, value as *const Value);
 
-    if result == PERIPHERAL_OK {
+    if result == PLUGIN_OK {
         log::debug!("Set value: {:?}", value);
         Ok(())
-    } else if result == PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST {
+    } else if result == ATTRIBUTE_DOES_NOT_EXIST {
         log::debug!("Attribute does not exist: {}", result);
-        Err(SetValueError::DoesNotExist)
+        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        Err(SetValueError::DoesNotExist(msg))
     } else {
-        log::debug!(
+        log::error!(
             "Received error code while setting attribute value: {}",
             result
         );
-        Err(SetValueError::Failure)
+        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        Err(SetValueError::Failure(msg))
+    }
+}
+
+/// Represents a failure to recover an error message from the peripheral.
+#[derive(Debug)]
+struct KpalErrorMsg {}
+
+impl fmt::Display for KpalErrorMsg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Error retrieving error message from the peripheral")
+    }
+}
+
+impl From<std::str::Utf8Error> for KpalErrorMsg {
+    fn from(_: std::str::Utf8Error) -> Self {
+        KpalErrorMsg {}
     }
 }
 
 /// Represents the state of a result obtained by fetching a name from an attribute.
 #[derive(Debug, PartialEq)]
 pub enum NameError {
-    DoesNotExist,
-    Failure,
+    DoesNotExist(String),
+    Failure(String),
 }
 
 /// Represents the state of a result obtained by fetching a value from an attribute.
 #[derive(Debug, PartialEq)]
 pub enum ValueError {
-    DoesNotExist,
-    Failure,
+    DoesNotExist(String),
+    Failure(String),
 }
 
 /// Represents the state of a result obtained by setting a value of an attribute.
 #[derive(Debug, PartialEq)]
 pub enum SetValueError {
-    DoesNotExist,
-    Failure,
+    DoesNotExist(String),
+    Failure(String),
 }
 
 #[cfg(test)]
@@ -145,6 +190,13 @@ mod tests {
     use crate::plugins::driver::{NameError, ValueError};
 
     #[test]
+    fn test_error_message() {
+        let plugin = set_up();
+        let msg = unsafe { error_message(&plugin, 0) };
+        assert_eq!("foo", msg.unwrap());
+    }
+
+    #[test]
     fn test_attribute_name() {
         let mut plugin = set_up();
         let cases: Vec<(
@@ -152,8 +204,14 @@ mod tests {
             extern "C" fn(*const Peripheral, size_t, *mut c_uchar, size_t) -> c_int,
         )> = vec![
             (Ok(String::from("")), attribute_name_ok),
-            (Err(NameError::DoesNotExist), attribute_name_does_not_exist),
-            (Err(NameError::Failure), attribute_name_failure),
+            (
+                Err(NameError::DoesNotExist(String::from("foo"))),
+                attribute_name_does_not_exist,
+            ),
+            (
+                Err(NameError::Failure(String::from("foo"))),
+                attribute_name_failure,
+            ),
         ];
 
         let mut result: Result<String, NameError>;
@@ -175,10 +233,13 @@ mod tests {
         )> = vec![
             (Ok(()), attribute_value_ok),
             (
-                Err(ValueError::DoesNotExist),
+                Err(ValueError::DoesNotExist(String::from("foo"))),
                 attribute_value_does_not_exist,
             ),
-            (Err(ValueError::Failure), attribute_value_failure),
+            (
+                Err(ValueError::Failure(String::from("foo"))),
+                attribute_value_failure,
+            ),
         ];
 
         let mut value = Value::Int(0);
@@ -196,6 +257,7 @@ mod tests {
         let peripheral = Box::into_raw(Box::new(MockPeripheral {})) as *mut Peripheral;
         let vtable = VTable {
             peripheral_free: def_peripheral_free,
+            error_message: def_error_message,
             attribute_name: def_attribute_name,
             attribute_value: def_attribute_value,
             set_attribute_value: def_set_attribute_value,
@@ -211,6 +273,11 @@ mod tests {
 
     // Default function pointers for the vtable
     extern "C" fn def_peripheral_free(_: *mut Peripheral) {}
+
+    extern "C" fn def_error_message(_: c_int) -> *const c_uchar {
+        b"foo\0" as *const c_uchar
+    }
+
     extern "C" fn def_attribute_name(
         _: *const Peripheral,
         _: size_t,
@@ -233,7 +300,7 @@ mod tests {
         _: *mut c_uchar,
         _: size_t,
     ) -> c_int {
-        PERIPHERAL_OK
+        PLUGIN_OK
     }
     extern "C" fn attribute_name_does_not_exist(
         _: *const Peripheral,
@@ -241,7 +308,7 @@ mod tests {
         _: *mut c_uchar,
         _: size_t,
     ) -> c_int {
-        PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST
+        ATTRIBUTE_DOES_NOT_EXIST
     }
     extern "C" fn attribute_name_failure(
         _: *const Peripheral,
@@ -252,14 +319,14 @@ mod tests {
         999
     }
     extern "C" fn attribute_value_ok(_: *const Peripheral, _: size_t, _: *mut Value) -> c_int {
-        PERIPHERAL_OK
+        PLUGIN_OK
     }
     extern "C" fn attribute_value_does_not_exist(
         _: *const Peripheral,
         _: size_t,
         _: *mut Value,
     ) -> c_int {
-        PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST
+        ATTRIBUTE_DOES_NOT_EXIST
     }
     extern "C" fn attribute_value_failure(_: *const Peripheral, _: size_t, _: *mut Value) -> c_int {
         999

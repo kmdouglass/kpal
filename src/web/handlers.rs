@@ -270,7 +270,7 @@ impl From<ResourceNotFoundError> for RequestHandlerError {
 impl From<PluginError> for RequestHandlerError {
     fn from(error: PluginError) -> Self {
         RequestHandlerError {
-            body: String::from(format!("Error received from plugin: {}", error)),
+            body: error.body,
             http_status_code: error.http_status_code,
         }
     }

@@ -8,6 +8,7 @@ use log;
 use super::messaging::{Receiver, Transmitter};
 use super::Plugin;
 
+use crate::init::libraries::TSLibrary;
 use crate::models::Model;
 use crate::models::Peripheral;
 
@@ -19,13 +20,16 @@ pub struct Executor {
     pub plugin: Plugin,
 
     /// A copy of a Peripheral model.
-    peripheral: Peripheral,
+    pub peripheral: Peripheral,
 
     /// The executor's receiver.
     pub rx: Receiver,
 
     /// The executor's transmitter.
     pub tx: Transmitter,
+
+    /// The library of the plugin controlled by the executor.
+    pub lib: TSLibrary,
 }
 
 impl Executor {
@@ -35,7 +39,7 @@ impl Executor {
     ///
     /// * `plugin` - The Plugin instance that is managed by this Executor
     /// * `peripheral` - A copy of a Peripheral. This is used to update the corresponding model
-    pub fn new(plugin: Plugin, peripheral: Peripheral) -> Executor {
+    pub fn new(plugin: Plugin, peripheral: Peripheral, lib: TSLibrary) -> Executor {
         let (tx, rx) = channel();
 
         Executor {
@@ -43,6 +47,7 @@ impl Executor {
             peripheral,
             rx,
             tx,
+            lib,
         }
     }
 
@@ -70,7 +75,7 @@ impl Executor {
                     self.peripheral.id()
                 );
                 let msg = self.rx.recv().map_err(|_| ExecutorRuntimeError {})?;
-                msg.handle(&mut self.peripheral, &self.plugin);
+                msg.handle(&mut self);
             }
         });
     }
