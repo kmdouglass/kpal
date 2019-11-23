@@ -5,14 +5,13 @@ use std::fmt;
 use std::sync::mpsc::{channel, RecvTimeoutError, SendError};
 use std::sync::{Arc, MutexGuard, PoisonError, RwLock, RwLockReadGuard};
 
+use kpal_plugin::Value as PluginValue;
 use rouille::input::json::{json_input, JsonError};
 use rouille::{Request, Response};
 
 use crate::constants::REQUEST_TIMEOUT;
 use crate::init::transmitters::Transmitters;
-use crate::models::Library;
-use crate::models::Model;
-use crate::models::Peripheral;
+use crate::models::{Library, Model, Peripheral, Value};
 use crate::plugins::init as init_plugin;
 use crate::plugins::messaging::{Message, PluginError, Transmitter};
 use crate::plugins::PluginInitError;
@@ -131,6 +130,34 @@ pub fn get_peripheral_attribute(
 
     let (tx, rx) = channel();
     let msg = Message::GetPeripheralAttribute(attr_id, tx);
+    ptx.send(msg)?;
+
+    rx.recv_timeout(REQUEST_TIMEOUT)?
+        .map(|attr| Response::json(&attr))
+        .map_err(|e| RequestHandlerError::from(e))
+}
+
+/// Handles the PATCH /api/v0/peripherals/{id}/attributes/{attr_id} endpoint.
+pub fn patch_peripheral_attribute(
+    request: &Request,
+    id: usize,
+    attr_id: usize,
+    txs: Arc<RwLock<Transmitters>>,
+) -> Result<Response> {
+    let value: Value = json_input(&request)?;
+
+    let txs = txs.read()?;
+    let ptx = txs
+        .get(&id)
+        .ok_or(ResourceNotFoundError {
+            id: id,
+            name: String::from(Peripheral::key()),
+        })?
+        .lock()?;
+
+    let (tx, rx) = channel();
+    let value: PluginValue = value.into();
+    let msg = Message::PatchPeripheralAttribute(attr_id, value, tx);
     ptx.send(msg)?;
 
     rx.recv_timeout(REQUEST_TIMEOUT)?

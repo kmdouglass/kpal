@@ -1,3 +1,5 @@
+//! Messages and handlers for communications between peripheral threads and web server requests.
+
 use std::error::Error;
 use std::fmt;
 use std::fmt::Debug;
@@ -7,7 +9,7 @@ use std::sync::mpsc::Sender;
 use kpal_plugin::Value;
 use log;
 
-use super::driver::{attribute_value, NameError, ValueError};
+use super::driver::{attribute_value, set_attribute_value, NameError, SetValueError, ValueError};
 use super::Plugin;
 
 use crate::models::Model;
@@ -24,6 +26,7 @@ pub enum Message {
     GetPeripheral(Sender<Result<Peripheral, PluginError>>),
     GetPeripheralAttribute(usize, Sender<Result<Attribute, PluginError>>),
     GetPeripheralAttributes(Sender<Result<Vec<Attribute>, PluginError>>),
+    PatchPeripheralAttribute(usize, Value, Sender<Result<Attribute, PluginError>>),
 }
 
 impl Message {
@@ -40,7 +43,7 @@ impl Message {
             }
 
             Message::GetPeripheralAttribute(id, tx) => {
-                let result = get_attribute_value(peripheral, plugin, *id);
+                let result = attribute_value_wrapper(peripheral, plugin, *id);
 
                 log_and_send(tx.clone(), result, peripheral.id());
             }
@@ -57,11 +60,17 @@ impl Message {
 
                 let mut attrs = Vec::new();
                 for id in &ids {
-                    let result = get_attribute_value(peripheral, plugin, *id);
+                    let result = attribute_value_wrapper(peripheral, plugin, *id);
                     attrs.push(result);
                 }
 
                 log_and_send(tx.clone(), attrs.into_iter().collect(), peripheral.id());
+            }
+
+            Message::PatchPeripheralAttribute(id, value, tx) => {
+                let result = set_attribute_value_wrapper(peripheral, plugin, *id, value);
+
+                log_and_send(tx.clone(), result, peripheral.id());
             }
         };
     }
@@ -77,7 +86,7 @@ impl Message {
 /// * `peripheral` - The peripheral will be updated after the value is successfully obtained
 /// * `plugin` - The attribute is fetched using the API call provided by this plugin instance
 /// * `id` - The id of the attribute to fetch
-fn get_attribute_value(
+fn attribute_value_wrapper(
     peripheral: &mut Peripheral,
     plugin: &Plugin,
     id: usize,
@@ -91,6 +100,36 @@ fn get_attribute_value(
                 peripheral.id(),
             );
             peripheral.set_attribute_from_value(id, value);
+            let attr = &peripheral.attributes()[id];
+            attr.clone()
+        })
+        .map_err(|e| {
+            log::error!("Message handler error: {:?}", e);
+            PluginError::from(e)
+        })
+}
+
+/// Wraps the driver's set_attribute_value function.
+///
+/// This function is provided for ergonomics. It keeps the `handle()` function DRY and easier to
+/// read.
+///
+/// # Arguments
+///
+/// * `peripheral` - The peripheral will be updated after the value is successfully obtained
+/// * `plugin` - The attribute is fetched using the API call provided by this plugin instance
+/// * `id` - The id of the attribute to fetch
+/// * `value` - The value to set on the attribute
+fn set_attribute_value_wrapper(
+    peripheral: &mut Peripheral,
+    plugin: &Plugin,
+    id: usize,
+    value: &Value,
+) -> Result<Attribute, PluginError> {
+    set_attribute_value(plugin, id, value)
+        .map(|_| {
+            log::debug!("Set value {:?} on peripheral {}", value, peripheral.id(),);
+            peripheral.set_attribute_from_value(id, value.clone());
             let attr = &peripheral.attributes()[id];
             attr.clone()
         })
@@ -120,7 +159,7 @@ fn log_and_send<T: Debug>(
         );
     } else {
         log::debug!(
-            "Successfully sent response back to request from peripheral {}",
+            "Successfully sent response back to request of peripheral: {}",
             peripheral_id
         );
     };
@@ -150,6 +189,19 @@ impl fmt::Display for PluginError {
     }
 }
 
+impl From<NameError> for PluginError {
+    fn from(error: NameError) -> Self {
+        match error {
+            NameError::DoesNotExist => PluginError {
+                http_status_code: 404,
+            },
+            NameError::Failure => PluginError {
+                http_status_code: 500,
+            },
+        }
+    }
+}
+
 impl From<ValueError> for PluginError {
     fn from(error: ValueError) -> Self {
         match error {
@@ -163,13 +215,13 @@ impl From<ValueError> for PluginError {
     }
 }
 
-impl From<NameError> for PluginError {
-    fn from(error: NameError) -> Self {
+impl From<SetValueError> for PluginError {
+    fn from(error: SetValueError) -> Self {
         match error {
-            NameError::DoesNotExist => PluginError {
+            SetValueError::DoesNotExist => PluginError {
                 http_status_code: 404,
             },
-            NameError::Failure => PluginError {
+            SetValueError::Failure => PluginError {
                 http_status_code: 500,
             },
         }

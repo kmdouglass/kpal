@@ -3,14 +3,12 @@ use std::collections::HashMap;
 use libloading::Library as Dll;
 use serde::{Deserialize, Serialize};
 
-use kpal_plugin::Value;
+use kpal_plugin::Value as PluginValue;
 
 pub trait Model {
     fn id(&self) -> usize;
 
     fn key() -> &'static str;
-
-    fn set_id(&mut self, id: usize);
 }
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
@@ -24,9 +22,10 @@ pub enum Attribute {
 }
 
 impl Attribute {
-    /// Converts a peripheral Value into an Attribute.
+    // TODO Rename this to avoid confusion with the From trait.
+    /// Converts a peripheral PluginValue into an Attribute.
     ///
-    /// This function makes it easier to convert Values, which are returned from the Peripheral's
+    /// This function makes it easier to convert PluginValues, which are returned from the Peripheral's
     /// plugin API, to Attributes, which are passed across the REST API.
     ///
     /// # Arguments
@@ -34,25 +33,18 @@ impl Attribute {
     /// * `value` The value to assign to the new attribute
     /// * `id` The numeric ID of the attribute
     /// * `name` The attribute's name
-    pub fn from(value: Value, id: usize, name: String) -> Attribute {
+    pub fn from(value: PluginValue, id: usize, name: String) -> Attribute {
         match value {
-            Value::Int(value) => Attribute::Int {
+            PluginValue::Int(value) => Attribute::Int {
                 id: id,
                 name: name,
                 value: value,
             },
-            Value::Float(value) => Attribute::Float {
+            PluginValue::Float(value) => Attribute::Float {
                 id: id,
                 name: name,
                 value: value,
             },
-        }
-    }
-
-    pub fn id(&self) -> usize {
-        match self {
-            Attribute::Int { id, .. } => *id,
-            Attribute::Float { id, .. } => *id,
         }
     }
 
@@ -61,6 +53,19 @@ impl Attribute {
             Attribute::Int { name, .. } => name,
             Attribute::Float { name, .. } => name,
         }
+    }
+}
+
+impl Model for Attribute {
+    fn id(&self) -> usize {
+        match self {
+            Attribute::Int { id, .. } => *id,
+            Attribute::Float { id, .. } => *id,
+        }
+    }
+
+    fn key() -> &'static str {
+        "attributes"
     }
 }
 
@@ -94,6 +99,28 @@ impl PartialEq for Attribute {
                 },
             ) => id1 == id2 && name1 == name2 && value1 == value2,
             (_, _) => false,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "variant")]
+/// A Value represents the current value of an Attribute.
+///
+/// This enum is used to translate between values received from requests to update an attribute's
+/// state and values understood by the plugin API.
+pub enum Value {
+    #[serde(rename(serialize = "integer", deserialize = "integer"))]
+    Int { value: i64 },
+    #[serde(rename(serialize = "float", deserialize = "float"))]
+    Float { value: f64 },
+}
+
+impl Into<PluginValue> for Value {
+    fn into(self) -> PluginValue {
+        match self {
+            Value::Int { value } => PluginValue::Int(value),
+            Value::Float { value } => PluginValue::Float(value),
         }
     }
 }
@@ -136,10 +163,6 @@ impl Model for Library {
     fn key() -> &'static str {
         "libraries"
     }
-
-    fn set_id(&mut self, id: usize) {
-        self.id = id;
-    }
 }
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
@@ -179,7 +202,7 @@ impl Peripheral {
         self.attributes = attributes;
     }
 
-    pub fn set_attribute_from_value(&mut self, id: usize, value: Value) {
+    pub fn set_attribute_from_value(&mut self, id: usize, value: PluginValue) {
         let attribute = self.attributes.get_mut(id).unwrap();
         *attribute = Attribute::from(value, id, attribute.name().to_owned());
     }
@@ -197,6 +220,10 @@ impl Peripheral {
 
         self.links = links;
     }
+
+    pub fn set_id(&mut self, id: usize) {
+        self.id = id;
+    }
 }
 
 impl Model for Peripheral {
@@ -207,24 +234,20 @@ impl Model for Peripheral {
     fn key() -> &'static str {
         "peripherals"
     }
-
-    fn set_id(&mut self, id: usize) {
-        self.id = id;
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use kpal_plugin::Value;
+    use kpal_plugin::Value as PluginValue;
 
     #[test]
     fn test_attribute_from() {
         let context = set_up();
         let values = vec![
-            Value::Int(context.int_value),
-            Value::Float(context.float_value),
+            PluginValue::Int(context.int_value),
+            PluginValue::Float(context.float_value),
         ];
         let cases = values.into_iter().zip(context.attributes);
 
@@ -329,7 +352,7 @@ mod tests {
     #[test]
     fn test_peripheral_set_attribute_from_value() {
         let mut context = set_up();
-        let new_value = Value::Float(3.14159);
+        let new_value = PluginValue::Float(3.14159);
         let new_attr = Attribute::Float {
             id: context.id,
             name: context.name.clone(),

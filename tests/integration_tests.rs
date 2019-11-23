@@ -25,18 +25,26 @@ fn test_user_api() {
     let context = set_up().expect("Setup failed");
     log::debug!("{:?}", context);
 
-    let data = Data {
+    let post_data = PostData {
         name: "foo",
         library_id: 0,
+    };
+    let patch_data = PatchData {
+        variant: "float",
+        value: 42.0,
     };
     let cases: Vec<Case> = vec![
         ("/api/v0/libraries", Http::Get),
         ("/api/v0/libraries/0", Http::Get),
-        ("/api/v0/peripherals", Http::Post(data)),
+        ("/api/v0/peripherals", Http::Post(post_data)),
         ("/api/v0/peripherals", Http::Get),
         ("/api/v0/peripherals/0", Http::Get),
         ("/api/v0/peripherals/0/attributes", Http::Get),
         ("/api/v0/peripherals/0/attributes/0", Http::Get),
+        (
+            "/api/v0/peripherals/0/attributes/0",
+            Http::Patch(patch_data),
+        ),
     ];
     let result = {
         let result = panic::catch_unwind(|| {
@@ -72,6 +80,11 @@ fn subtest_user_api((route, http): &Case, base: &Url) {
             .json(&data)
             .send()
             .expect("Request failed"),
+        Http::Patch(data) => client
+            .patch(base.as_str())
+            .json(&data)
+            .send()
+            .expect("Request failed"),
     };
 
     log::debug!("Made request {:?}", req);
@@ -85,14 +98,22 @@ type Case = (&'static str, Http);
 #[derive(Debug)]
 enum Http {
     Get,
-    Post(Data),
+    Post(PostData),
+    Patch(PatchData),
 }
 
 /// Post data to create a new peripheral.
 #[derive(Debug, Serialize)]
-struct Data {
+struct PostData {
     name: &'static str,
     library_id: usize,
+}
+
+/// Patch data to update an attribute value.
+#[derive(Debug, Serialize)]
+struct PatchData {
+    variant: &'static str,
+    value: f64,
 }
 
 /// Data that specifies the context within which the test is run.

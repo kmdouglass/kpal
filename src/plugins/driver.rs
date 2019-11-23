@@ -12,32 +12,6 @@ use super::Plugin;
 
 use crate::constants::*;
 
-/// Returns the value of an attribute from a Plugin.
-///
-/// # Arguments
-///
-/// * `plugin` - A reference to the Plugin from which an attribute will be obtained
-/// * `id` - The attribute's unique ID
-/// * `value` - A reference to a value instance into which the attribute's value will be copied
-pub fn attribute_value(plugin: &Plugin, id: size_t, value: &mut Value) -> Result<(), ValueError> {
-    let result =
-        (plugin.vtable.attribute_value)(plugin.peripheral, id as size_t, value as *mut Value);
-
-    if result == PERIPHERAL_OK {
-        log::debug!("Received value: {:?}", value);
-        Ok(())
-    } else if result == PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST {
-        log::debug!("Attribute does not exist: {}", result);
-        Err(ValueError::DoesNotExist)
-    } else {
-        log::debug!(
-            "Received error code while fetching attribute value: {}",
-            result
-        );
-        Err(ValueError::Failure)
-    }
-}
-
 /// Returns the name of an attribute from a Plugin.
 ///
 /// # Arguments
@@ -49,7 +23,7 @@ pub fn attribute_name(plugin: &Plugin, id: size_t) -> Result<String, NameError> 
 
     let result = (plugin.vtable.attribute_name)(
         plugin.peripheral,
-        id as size_t,
+        id,
         &mut name[0] as *mut c_uchar,
         ATTRIBUTE_NAME_BUFFER_LENGTH,
     );
@@ -84,6 +58,67 @@ pub fn attribute_name(plugin: &Plugin, id: size_t) -> Result<String, NameError> 
     }
 }
 
+/// Returns the value of an attribute from a Plugin.
+///
+/// # Arguments
+///
+/// * `plugin` - A reference to the Plugin from which an attribute will be obtained
+/// * `id` - The attribute's unique ID
+/// * `value` - A reference to a value instance into which the attribute's value will be copied
+pub fn attribute_value(plugin: &Plugin, id: size_t, value: &mut Value) -> Result<(), ValueError> {
+    let result = (plugin.vtable.attribute_value)(plugin.peripheral, id, value as *mut Value);
+
+    if result == PERIPHERAL_OK {
+        log::debug!("Received value: {:?}", value);
+        Ok(())
+    } else if result == PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST {
+        log::debug!("Attribute does not exist: {}", result);
+        Err(ValueError::DoesNotExist)
+    } else {
+        log::debug!(
+            "Received error code while fetching attribute value: {}",
+            result
+        );
+        Err(ValueError::Failure)
+    }
+}
+
+/// Sets the value of an attribute of a Plugin.
+///
+/// # Arguments
+///
+/// * `plugin` - A reference to the Plugin on which the attribute will be set
+/// * `id` - The attribute's unique ID
+/// * `value` - A reference to a value instance that will be copied into the plugin
+pub fn set_attribute_value(
+    plugin: &Plugin,
+    id: size_t,
+    value: &Value,
+) -> Result<(), SetValueError> {
+    let result = (plugin.vtable.set_attribute_value)(plugin.peripheral, id, value as *const Value);
+
+    if result == PERIPHERAL_OK {
+        log::debug!("Set value: {:?}", value);
+        Ok(())
+    } else if result == PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST {
+        log::debug!("Attribute does not exist: {}", result);
+        Err(SetValueError::DoesNotExist)
+    } else {
+        log::debug!(
+            "Received error code while setting attribute value: {}",
+            result
+        );
+        Err(SetValueError::Failure)
+    }
+}
+
+/// Represents the state of a result obtained by fetching a name from an attribute.
+#[derive(Debug, PartialEq)]
+pub enum NameError {
+    DoesNotExist,
+    Failure,
+}
+
 /// Represents the state of a result obtained by fetching a value from an attribute.
 #[derive(Debug, PartialEq)]
 pub enum ValueError {
@@ -91,9 +126,9 @@ pub enum ValueError {
     Failure,
 }
 
-/// Represents the state of a result obtained by fetching a name from an attribute.
+/// Represents the state of a result obtained by setting a value of an attribute.
 #[derive(Debug, PartialEq)]
-pub enum NameError {
+pub enum SetValueError {
     DoesNotExist,
     Failure,
 }

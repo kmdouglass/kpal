@@ -287,6 +287,11 @@ extern "C" fn set_attribute_value(
     let peripheral = peripheral as *mut Basic;
 
     unsafe {
+        log::debug!(
+            "Received request to set the value of attribute {} for peripheral: {:?}",
+            id,
+            *peripheral
+        );
         match (*peripheral).attribute_set_value(id, &*value) {
             Ok(_) => PERIPHERAL_OK,
             Err(e) => e.error_code(),
