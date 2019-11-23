@@ -12,6 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 - `Scheduler` was renamed to `Executor`.
+- `Attribute::from` was renamed to `Attribute::new` to avoid confusion with the `From` trait.
 
 ### Removed
 - All dependencies on an external database. This should increase portability and simplify some
