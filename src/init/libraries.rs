@@ -15,7 +15,13 @@ use log;
 use kpal_plugin::constants::*;
 
 use crate::models::Library;
-use crate::plugins::TSLibrary;
+
+/// A thread safe version of a [Library](../models/struct.Library.html) instance.
+///
+/// This is a convenience type for sharing a single a Library instance between multiple
+/// threads. Due to its use of a Mutex, different peripherals that use the same library will not
+/// make function calls from the library in a deterministic order.
+pub type TSLibrary = Arc<Mutex<Library>>;
 
 /// Returns a list of loaded plugin libraries.
 ///
