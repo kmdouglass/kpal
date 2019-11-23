@@ -10,12 +10,12 @@ use rouille::input::json::{json_input, JsonError};
 use rouille::{Request, Response};
 
 use crate::constants::REQUEST_TIMEOUT;
+use crate::init::libraries::TSLibrary;
 use crate::init::transmitters::Transmitters;
 use crate::models::{Library, Model, Peripheral, Value};
 use crate::plugins::init as init_plugin;
 use crate::plugins::messaging::{Message, PluginError, Transmitter};
 use crate::plugins::PluginInitError;
-use crate::plugins::TSLibrary;
 
 /// Handles the GET /api/v0/libraries endpoint.
 pub fn get_libraries(libs: &Vec<TSLibrary>) -> Result<Response> {

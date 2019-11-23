@@ -1,5 +1,5 @@
 //! Routines for initializing the daemon.
-pub mod library;
+pub mod libraries;
 pub mod transmitters;
 
 use std::boxed::Box;
@@ -13,8 +13,9 @@ use dirs::home_dir;
 use lazy_static::lazy_static;
 use structopt::StructOpt;
 
+use libraries::TSLibrary;
+
 use crate::constants::{KPAL_DIR, LIBRARY_DIR};
-use crate::plugins::TSLibrary;
 
 lazy_static! {
     static ref DEFAULT_LIBRARY_DIR: String = {
@@ -62,7 +63,7 @@ pub struct Init {
 /// * `args` - The command line arguments that were passed to the daemon at startup.
 pub fn init(args: &Cli) -> Result<Init> {
     let libraries =
-        library::init(&args.library_dir).map_err(|e| InitError { side: Box::new(e) })?;
+        libraries::init(&args.library_dir).map_err(|e| InitError { side: Box::new(e) })?;
     let transmitters = RwLock::new(transmitters::init());
 
     Ok(Init {
