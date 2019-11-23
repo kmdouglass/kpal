@@ -45,7 +45,7 @@ pub fn attributes(peripheral: &mut Peripheral, plugin: &Plugin) {
             },
         };
 
-        attr.push(Attribute::from(value.clone(), index, name));
+        attr.push(Attribute::new(value.clone(), index, name));
 
         index += 1;
     }

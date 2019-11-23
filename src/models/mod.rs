@@ -22,18 +22,24 @@ pub enum Attribute {
 }
 
 impl Attribute {
-    // TODO Rename this to avoid confusion with the From trait.
-    /// Converts a peripheral PluginValue into an Attribute.
+    pub fn name(&self) -> &str {
+        match self {
+            Attribute::Int { name, .. } => name,
+            Attribute::Float { name, .. } => name,
+        }
+    }
+
+    /// Creates a new Attribute instance from a PluginValue.
     ///
-    /// This function makes it easier to convert PluginValues, which are returned from the Peripheral's
-    /// plugin API, to Attributes, which are passed across the REST API.
+    /// This function makes it easier to convert PluginValues, which are returned from the
+    /// Peripheral's plugin API, to Attributes, which are passed across the REST API.
     ///
     /// # Arguments
     ///
     /// * `value` The value to assign to the new attribute
     /// * `id` The numeric ID of the attribute
     /// * `name` The attribute's name
-    pub fn from(value: PluginValue, id: usize, name: String) -> Attribute {
+    pub fn new(value: PluginValue, id: usize, name: String) -> Attribute {
         match value {
             PluginValue::Int(value) => Attribute::Int {
                 id: id,
@@ -45,13 +51,6 @@ impl Attribute {
                 name: name,
                 value: value,
             },
-        }
-    }
-
-    pub fn name(&self) -> &str {
-        match self {
-            Attribute::Int { name, .. } => name,
-            Attribute::Float { name, .. } => name,
         }
     }
 }
@@ -204,7 +203,7 @@ impl Peripheral {
 
     pub fn set_attribute_from_value(&mut self, id: usize, value: PluginValue) {
         let attribute = self.attributes.get_mut(id).unwrap();
-        *attribute = Attribute::from(value, id, attribute.name().to_owned());
+        *attribute = Attribute::new(value, id, attribute.name().to_owned());
     }
 
     pub fn set_attribute_links(&mut self) {
@@ -252,7 +251,7 @@ mod tests {
         let cases = values.into_iter().zip(context.attributes);
 
         for (value, attr) in cases {
-            let converted_attr = Attribute::from(value, context.id, context.name.clone());
+            let converted_attr = Attribute::new(value, context.id, context.name.clone());
             assert_eq!(attr, converted_attr);
         }
     }
