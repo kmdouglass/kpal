@@ -1,11 +1,17 @@
+use std::collections::HashMap;
+
 use libloading::Library as Dll;
 use serde::{Deserialize, Serialize};
 
-use database::{Count, Query, Queue};
-
 use kpal_plugin::Value;
 
-pub mod database;
+pub trait Model {
+    fn id(&self) -> usize;
+
+    fn key() -> &'static str;
+
+    fn set_id(&mut self, id: usize);
+}
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
 #[serde(tag = "variant")]
@@ -101,6 +107,17 @@ pub struct Library {
     library: Option<Dll>,
 }
 
+impl Clone for Library {
+    /// Clones a library by ignoring any dynamic library owned by the model.
+    fn clone(&self) -> Self {
+        Library {
+            id: self.id,
+            library: None,
+            name: self.name.clone(),
+        }
+    }
+}
+
 impl Library {
     pub fn new(id: usize, name: String, library: Option<Dll>) -> Library {
         Library { id, name, library }
@@ -111,7 +128,7 @@ impl Library {
     }
 }
 
-impl Query for Library {
+impl Model for Library {
     fn id(&self) -> usize {
         self.id
     }
@@ -125,18 +142,19 @@ impl Query for Library {
     }
 }
 
-impl Count for Library {}
-
 #[derive(Clone, Deserialize, Debug, Serialize)]
 pub struct Peripheral {
     library_id: usize,
     name: String,
 
-    #[serde(default)]
+    #[serde(skip)]
     attributes: Vec<Attribute>,
 
     #[serde(default)]
     id: usize,
+
+    #[serde(default)]
+    links: Vec<HashMap<String, String>>,
 }
 
 impl Peripheral {
@@ -165,9 +183,23 @@ impl Peripheral {
         let attribute = self.attributes.get_mut(id).unwrap();
         *attribute = Attribute::from(value, id, attribute.name().to_owned());
     }
+
+    pub fn set_attribute_links(&mut self) {
+        let mut links = Vec::new();
+        for attr in &self.attributes {
+            let mut link = HashMap::new();
+            link.insert(
+                "href".to_string(),
+                format!("/api/v0/peripherals/{}/attributes/{}", self.id, attr.id()),
+            );
+            links.push(link);
+        }
+
+        self.links = links;
+    }
 }
 
-impl Query for Peripheral {
+impl Model for Peripheral {
     fn id(&self) -> usize {
         self.id
     }
@@ -180,10 +212,6 @@ impl Query for Peripheral {
         self.id = id;
     }
 }
-
-impl Count for Peripheral {}
-
-impl Queue for Peripheral {}
 
 #[cfg(test)]
 mod tests {
@@ -340,12 +368,14 @@ mod tests {
             },
         ];
 
-        let peripheral = Peripheral {
+        let mut peripheral = Peripheral {
             library_id: library_id,
             name: name.clone(),
             attributes: attributes.clone(),
             id: id,
+            links: Vec::new(),
         };
+        peripheral.set_attribute_links();
 
         Context {
             attributes,

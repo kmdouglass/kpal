@@ -5,14 +5,13 @@ use std::fmt;
 use std::sync::mpsc::{channel, RecvTimeoutError, SendError};
 use std::sync::{Arc, MutexGuard, PoisonError, RwLock, RwLockReadGuard};
 
-use redis;
 use rouille::input::json::{json_input, JsonError};
 use rouille::{Request, Response};
 
 use crate::constants::REQUEST_TIMEOUT;
 use crate::init::transmitters::Transmitters;
-use crate::models::database::{Count, DatabaseError, Query};
 use crate::models::Library;
+use crate::models::Model;
 use crate::models::Peripheral;
 use crate::plugins::init as init_plugin;
 use crate::plugins::messaging::{Message, PluginError, Transmitter};
@@ -20,45 +19,71 @@ use crate::plugins::PluginInitError;
 use crate::plugins::TSLibrary;
 
 /// Handles the GET /api/v0/libraries endpoint.
-pub fn get_libraries(db: &redis::Connection) -> Result<Response> {
-    Library::all(&db)
-        .map(|l| Response::json(&l))
-        .map_err(|e| RequestHandlerError::from(e))
+pub fn get_libraries(libs: &Vec<TSLibrary>) -> Result<Response> {
+    let mut result = Vec::new();
+    for lib in libs {
+        result.push(lib.lock()?.clone());
+    }
+
+    Ok(Response::json(&result))
 }
 
 /// Handles the GET /api/v0/libraries/{id} endpoint.
-pub fn get_library(db: &redis::Connection, id: usize) -> Result<Response> {
-    Library::get(&db, id)?
-        .map(|l| Response::json(&l))
+pub fn get_library(id: usize, libs: &Vec<TSLibrary>) -> Result<Response> {
+    let lib = libs
+        .get(id)
         .ok_or(ResourceNotFoundError {
             id: id,
             name: String::from(Library::key()),
-        })
-        .map_err(|e| RequestHandlerError::from(e))
+        })?
+        .lock()?;
+
+    Ok(Response::json(&*lib))
 }
 /// Handles the GET /api/v0/peripherals/{id} endpoint.
-pub fn get_peripheral(db: &redis::Connection, id: usize) -> Result<Response> {
-    Peripheral::get(&db, id)?
-        .map(|p| Response::json(&p))
+pub fn get_peripheral(id: usize, txs: Arc<RwLock<Transmitters>>) -> Result<Response> {
+    let txs = txs.read()?;
+    let ptx = txs
+        .get(&id)
         .ok_or(ResourceNotFoundError {
             id: id,
             name: String::from(Peripheral::key()),
-        })
+        })?
+        .lock()?;
+
+    let (tx, rx) = channel();
+    let msg = Message::GetPeripheral(tx);
+    ptx.send(msg)?;
+
+    rx.recv_timeout(REQUEST_TIMEOUT)?
+        .map(|attr| Response::json(&attr))
         .map_err(|e| RequestHandlerError::from(e))
 }
 
 /// Handles the GET /api/v0/peripherals endpoint.
-pub fn get_peripherals(db: &redis::Connection) -> Result<Response> {
-    Peripheral::all(&db)
-        .map(|p| Response::json(&p))
-        .map_err(|e| RequestHandlerError::from(e))
+pub fn get_peripherals(txs: Arc<RwLock<Transmitters>>) -> Result<Response> {
+    let mut msg: Message;
+    let mut p: Peripheral;
+
+    let txs = txs.read()?;
+    let mut peripherals = Vec::new();
+    for (_, mutex) in txs.iter() {
+        let ptx = mutex.lock()?;
+
+        let (tx, rx) = channel();
+        msg = Message::GetPeripheral(tx);
+        ptx.send(msg)?;
+
+        p = rx.recv_timeout(REQUEST_TIMEOUT)??;
+        peripherals.push(p);
+    }
+
+    Ok(Response::json(&peripherals))
 }
 
 /// Handles the POST /api/v0/peripherals endpoint.
 pub fn post_peripherals(
     request: &Request,
-    client: &redis::Client,
-    db: &redis::Connection,
     libs: &Vec<TSLibrary>,
     txs: Arc<RwLock<Transmitters>>,
 ) -> Result<Response> {
@@ -74,10 +99,10 @@ pub fn post_peripherals(
         }
     };
 
-    let id: usize = Peripheral::count_and_incr(&db)?;
+    let id: usize = count_and_incr(txs.clone())?;
     periph.set_id(id);
 
-    init_plugin(&mut periph, client, lib, txs)?;
+    init_plugin(&mut periph, lib, txs)?;
 
     let mut response = Response::text("The peripheral has been created.\n");
     response.status_code = 201;
@@ -85,6 +110,7 @@ pub fn post_peripherals(
         "Location".into(),
         format!("/api/v0/peripherals/{}", &periph.id()).into(),
     ));
+
     Ok(response)
 }
 
@@ -132,6 +158,30 @@ pub fn get_peripheral_attributes(id: usize, txs: Arc<RwLock<Transmitters>>) -> R
         .map_err(|e| RequestHandlerError::from(e))
 }
 
+/// Finds and returns the next largest integer to serve as a new peripheral ID.
+///
+/// This function loops over all the transmitters and finds the largest value for the peripheral
+/// ID. It then returns a value that is one greater than this.
+///
+/// # Arguments
+///
+/// * `txs` - The collection of transmitters for communicating with peripherals
+fn count_and_incr(txs: Arc<RwLock<Transmitters>>) -> Result<usize> {
+    let txs = txs.read()?;
+    if txs.len() == 0 {
+        return Ok(0);
+    }
+
+    let mut largest_id: usize = 0;
+    for (id, _) in txs.iter() {
+        if *id > largest_id {
+            largest_id = *id
+        }
+    }
+
+    Ok(largest_id + 1)
+}
+
 /// Result type containing a RequestHandlerError for the Err variant.
 pub type Result<T> = std::result::Result<T, RequestHandlerError>;
 
@@ -172,18 +222,6 @@ impl fmt::Display for RequestHandlerError {
     }
 }
 
-impl From<DatabaseError> for RequestHandlerError {
-    fn from(error: DatabaseError) -> Self {
-        RequestHandlerError {
-            body: String::from(format!(
-                "Error when communicating with the database: {}",
-                error
-            )),
-            http_status_code: 500,
-        }
-    }
-}
-
 impl From<JsonError> for RequestHandlerError {
     fn from(error: JsonError) -> Self {
         RequestHandlerError {
@@ -215,6 +253,15 @@ impl From<PluginInitError> for RequestHandlerError {
     fn from(error: PluginInitError) -> Self {
         RequestHandlerError {
             body: String::from(format!("Error during plugin intitialization: {}", error)),
+            http_status_code: 500,
+        }
+    }
+}
+
+impl<'a> From<PoisonError<MutexGuard<'a, Library>>> for RequestHandlerError {
+    fn from(error: PoisonError<MutexGuard<Library>>) -> Self {
+        RequestHandlerError {
+            body: String::from(format!("Library mutex is poisoned: {}", error)),
             http_status_code: 500,
         }
     }

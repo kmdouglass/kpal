@@ -18,10 +18,8 @@ use libloading::Symbol;
 
 use kpal_plugin::{KpalPluginInit, Plugin};
 
-use crate::constants::SCHEDULER_SLEEP_DURATION;
 use crate::init::transmitters::Transmitters;
-use crate::models::database::Query;
-use crate::models::{Library, Peripheral};
+use crate::models::{Library, Model, Peripheral};
 use scheduler::Scheduler;
 
 /// A thread safe version of a [Library](../models/struct.Library.html) instance.
@@ -36,25 +34,18 @@ pub type TSLibrary = Arc<Mutex<Library>>;
 /// # Arguments
 ///
 /// * `peripheral` - A Peripheral model instance that will be updated with the Plugin's information
-/// * `client` - A database client; a clone of this client will be passed to the scheduler
 /// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
 /// * `txs` - The set of transmitters currently known to the daemon
 pub fn init(
     peripheral: &mut Peripheral,
-    client: &redis::Client,
     lib: TSLibrary,
     txs: Arc<RwLock<Transmitters>>,
 ) -> std::result::Result<(), PluginInitError> {
     let plugin: Plugin = unsafe { kpal_plugin_init(lib.clone())? };
 
-    let db = client
-        .get_connection()
-        .map_err(|e| PluginInitError { side: Box::new(e) })?;
-
     init::attributes(peripheral, &plugin);
 
-    let mut scheduler = Scheduler::new(plugin, db, peripheral.clone(), SCHEDULER_SLEEP_DURATION);
-    init::tasks(&peripheral, &mut scheduler);
+    let scheduler = Scheduler::new(plugin, peripheral.clone());
 
     let tx = Mutex::new(scheduler.tx.clone());
     txs.write()

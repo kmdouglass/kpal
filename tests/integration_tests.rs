@@ -100,7 +100,6 @@ struct Data {
 struct Context {
     bin_dir: PathBuf,
     daemon: Child,
-    db_addr: String,
     library_dir: TempDir,
     server_addr: String,
     server_url: Url,
@@ -132,16 +131,9 @@ fn set_up() -> Result<Context, io::Error> {
     let server_url =
         Url::parse(&format!("http://{}", &server_addr)).expect("Could not get base URL");
 
-    // Grab the database IP address and port from the environment
-    let db_addr: String = env::var_os("DATABASE_ADDRESS")
-        .unwrap_or(OsString::from("redis://0.0.0.0:6379"))
-        .into_string()
-        .expect("Could not get DATABASE_ADDRESS environment variable");
-
     // Start the server
     let daemon = start_daemon(
         bin_dir.as_path(),
-        &db_addr,
         library_dir.path(),
         &server_addr,
         &server_url,
@@ -151,7 +143,6 @@ fn set_up() -> Result<Context, io::Error> {
     Ok(Context {
         bin_dir,
         daemon,
-        db_addr,
         library_dir,
         server_addr,
         server_url,
@@ -174,20 +165,16 @@ fn tear_down(mut context: Context) {
 /// # Arguments
 ///
 /// * `bin_dir` - The location of the daemon's binary file
-/// * `db_addr` - The address of the database
 /// * `library_dir` - The location of the peripheral library files
 /// * `server_addr` - The address of the server in the form $ADDRESS:$PORT
 /// * `server_url` - The URL of the server in the form $SCHEME://$ADDRESS:$PORT
 fn start_daemon(
     bin_dir: &Path,
-    db_addr: &str,
     library_dir: &Path,
     server_addr: &str,
     server_url: &Url,
 ) -> Result<Child, StartDaemonError> {
     let mut daemon = Command::new(bin_dir)
-        .arg("--database-address")
-        .arg(db_addr)
         .arg("--library-dir")
         .arg(library_dir)
         .arg("--server-address")
