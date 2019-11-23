@@ -1,14 +1,14 @@
 //! Utilities to create and interact with Plugins.
 //!
 //! The plugins module is responsible for initializing new plugins and creating their
-//! schedulers. Each plugin is assigned a scheduler, and eeach scheduler runs inside its own
+//! executors. Each plugin is assigned an executor, and each executor runs inside its own
 //! thread. All communication with a peripheral occurs through tasks that are executed by the
-//! scheduler.
+//! executor.
 
 mod driver;
+mod executor;
 mod init;
 pub mod messaging;
-mod scheduler;
 
 use std::error::Error;
 use std::fmt;
@@ -20,7 +20,7 @@ use kpal_plugin::{KpalPluginInit, Plugin};
 
 use crate::init::transmitters::Transmitters;
 use crate::models::{Library, Model, Peripheral};
-use scheduler::Scheduler;
+use executor::Executor;
 
 /// A thread safe version of a [Library](../models/struct.Library.html) instance.
 ///
@@ -45,16 +45,16 @@ pub fn init(
 
     init::attributes(peripheral, &plugin);
 
-    let scheduler = Scheduler::new(plugin, peripheral.clone());
+    let executor = Executor::new(plugin, peripheral.clone());
 
-    let tx = Mutex::new(scheduler.tx.clone());
+    let tx = Mutex::new(executor.tx.clone());
     txs.write()
         .map_err(|_| PluginInitError {
             side: Box::new(TransmittersLockError {}),
         })?
         .insert(peripheral.id(), tx);
 
-    Scheduler::run(scheduler);
+    executor.run();
 
     Ok(())
 }
