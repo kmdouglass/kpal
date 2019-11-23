@@ -8,8 +8,9 @@ use memchr::memchr;
 use kpal_plugin::constants::*;
 use kpal_plugin::Value;
 
+use super::Plugin;
+
 use crate::constants::*;
-use crate::plugins::Plugin;
 
 /// Returns the value of an attribute from a Plugin.
 ///
@@ -18,22 +19,22 @@ use crate::plugins::Plugin;
 /// * `plugin` - A reference to the Plugin from which an attribute will be obtained
 /// * `id` - The attribute's unique ID
 /// * `value` - A reference to a value instance into which the attribute's value will be copied
-pub fn attribute_value(plugin: &Plugin, id: size_t, value: &mut Value) -> ValueResult {
+pub fn attribute_value(plugin: &Plugin, id: size_t, value: &mut Value) -> Result<(), ValueError> {
     let result =
         (plugin.vtable.attribute_value)(plugin.peripheral, id as size_t, value as *mut Value);
 
     if result == PERIPHERAL_OK {
         log::debug!("Received value: {:?}", value);
-        ValueResult::Success
+        Ok(())
     } else if result == PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST {
         log::debug!("Attribute does not exist: {}", result);
-        ValueResult::DoesNotExist
+        Err(ValueError::DoesNotExist)
     } else {
         log::debug!(
             "Received error code while fetching attribute value: {}",
             result
         );
-        ValueResult::Failure
+        Err(ValueError::Failure)
     }
 }
 
@@ -43,7 +44,7 @@ pub fn attribute_value(plugin: &Plugin, id: size_t, value: &mut Value) -> ValueR
 ///
 /// * `plugin` - A reference to the Plugin from which an attribute's name will be obtained
 /// * `id` - The attribute's unique ID
-pub fn attribute_name(plugin: &Plugin, id: size_t) -> NameResult {
+pub fn attribute_name(plugin: &Plugin, id: size_t) -> Result<String, NameError> {
     let mut name = [0u8; ATTRIBUTE_NAME_BUFFER_LENGTH];
 
     let result = (plugin.vtable.attribute_name)(
@@ -70,31 +71,29 @@ pub fn attribute_name(plugin: &Plugin, id: size_t) -> NameResult {
         };
 
         log::debug!("Received name: {:?}", name);
-        NameResult::Success(name)
+        Ok(name)
     } else if result == PERIPHERAL_ATTRIBUTE_DOES_NOT_EXIST {
         log::debug!("Attribute does not exist: {}", result);
-        NameResult::DoesNotExist
+        Err(NameError::DoesNotExist)
     } else {
         log::debug!(
             "Received error code while getting attribute name: {}",
             result
         );
-        NameResult::Failure
+        Err(NameError::Failure)
     }
 }
 
 /// Represents the state of a result obtained by fetching a value from an attribute.
 #[derive(Debug, PartialEq)]
-pub enum ValueResult {
-    Success,
+pub enum ValueError {
     DoesNotExist,
     Failure,
 }
 
 /// Represents the state of a result obtained by fetching a name from an attribute.
 #[derive(Debug, PartialEq)]
-pub enum NameResult {
-    Success(String),
+pub enum NameError {
     DoesNotExist,
     Failure,
 }
@@ -108,21 +107,21 @@ mod tests {
     use kpal_plugin::{Peripheral, Plugin, VTable, Value};
     use libc::{c_int, c_uchar, size_t};
 
-    use crate::plugins::driver::{NameResult, ValueResult};
+    use crate::plugins::driver::{NameError, ValueError};
 
     #[test]
     fn test_attribute_name() {
         let mut plugin = set_up();
         let cases: Vec<(
-            NameResult,
+            Result<String, NameError>,
             extern "C" fn(*const Peripheral, size_t, *mut c_uchar, size_t) -> c_int,
         )> = vec![
-            (NameResult::Success(String::from("")), attribute_name_ok),
-            (NameResult::DoesNotExist, attribute_name_does_not_exist),
-            (NameResult::Failure, attribute_name_failure),
+            (Ok(String::from("")), attribute_name_ok),
+            (Err(NameError::DoesNotExist), attribute_name_does_not_exist),
+            (Err(NameError::Failure), attribute_name_failure),
         ];
 
-        let mut result: NameResult;
+        let mut result: Result<String, NameError>;
         for (expected, case) in cases {
             plugin.vtable.attribute_name = case;
             result = attribute_name(&plugin, 0);
@@ -136,16 +135,19 @@ mod tests {
     fn test_attribute_value() {
         let mut plugin = set_up();
         let cases: Vec<(
-            ValueResult,
+            Result<(), ValueError>,
             extern "C" fn(*const Peripheral, size_t, *mut Value) -> c_int,
         )> = vec![
-            (ValueResult::Success, attribute_value_ok),
-            (ValueResult::DoesNotExist, attribute_value_does_not_exist),
-            (ValueResult::Failure, attribute_value_failure),
+            (Ok(()), attribute_value_ok),
+            (
+                Err(ValueError::DoesNotExist),
+                attribute_value_does_not_exist,
+            ),
+            (Err(ValueError::Failure), attribute_value_failure),
         ];
 
         let mut value = Value::Int(0);
-        let mut result: ValueResult;
+        let mut result: Result<(), ValueError>;
         for (expected, case) in cases {
             plugin.vtable.attribute_value = case;
             result = attribute_value(&plugin, 0, &mut value);

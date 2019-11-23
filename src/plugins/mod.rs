@@ -7,19 +7,19 @@
 
 mod driver;
 mod init;
+pub mod messaging;
 mod scheduler;
 
 use std::error::Error;
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use libloading::Symbol;
 
 use kpal_plugin::{KpalPluginInit, Plugin};
 
-use crate::constants::SCHEDULER_SLEEP_DURATION;
-use crate::models::Library;
-use crate::models::Peripheral;
+use crate::init::transmitters::Transmitters;
+use crate::models::{Library, Model, Peripheral};
 use scheduler::Scheduler;
 
 /// A thread safe version of a [Library](../models/struct.Library.html) instance.
@@ -34,23 +34,26 @@ pub type TSLibrary = Arc<Mutex<Library>>;
 /// # Arguments
 ///
 /// * `peripheral` - A Peripheral model instance that will be updated with the Plugin's information
-/// * `client` - A database client; a clone of this client will be passed to the scheduler
 /// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
+/// * `txs` - The set of transmitters currently known to the daemon
 pub fn init(
     peripheral: &mut Peripheral,
-    client: &redis::Client,
     lib: TSLibrary,
+    txs: Arc<RwLock<Transmitters>>,
 ) -> std::result::Result<(), PluginInitError> {
     let plugin: Plugin = unsafe { kpal_plugin_init(lib.clone())? };
 
-    let db = client
-        .get_connection()
-        .map_err(|e| PluginInitError { side: Box::new(e) })?;
-
     init::attributes(peripheral, &plugin);
 
-    let mut scheduler = Scheduler::new(plugin, db, peripheral.clone(), SCHEDULER_SLEEP_DURATION);
-    init::tasks(&peripheral, &mut scheduler);
+    let scheduler = Scheduler::new(plugin, peripheral.clone());
+
+    let tx = Mutex::new(scheduler.tx.clone());
+    txs.write()
+        .map_err(|_| PluginInitError {
+            side: Box::new(TransmittersLockError {}),
+        })?
+        .insert(peripheral.id(), tx);
+
     Scheduler::run(scheduler);
 
     Ok(())
@@ -66,7 +69,7 @@ pub fn init(
 /// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
 unsafe fn kpal_plugin_init(lib: TSLibrary) -> Result<Plugin, PluginInitError> {
     let lib = lib.lock().map_err(|_| PluginInitError {
-        side: Box::new(LockError {}),
+        side: Box::new(LibraryLockError {}),
     })?;
 
     let dll = lib.dll().as_ref().ok_or(PluginInitError {
@@ -104,15 +107,15 @@ impl fmt::Display for PluginInitError {
 
 /// An error caused by the inability to obtain a lock on a Library instance.
 #[derive(Debug)]
-pub struct LockError {}
+pub struct LibraryLockError {}
 
-impl Error for LockError {
+impl Error for LibraryLockError {
     fn description(&self) -> &str {
         "Could not obtain a lock on the library"
     }
 }
 
-impl fmt::Display for LockError {
+impl fmt::Display for LibraryLockError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Could not obtain a lock on the library")
     }
@@ -131,5 +134,21 @@ impl Error for ReferenceError {
 impl fmt::Display for ReferenceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Could not obtain a reference to the library")
+    }
+}
+
+/// An error caused by the inability to obtain a lock on the Transmitters.
+#[derive(Debug)]
+pub struct TransmittersLockError {}
+
+impl Error for TransmittersLockError {
+    fn description(&self) -> &str {
+        "Could not obtain a lock on the transmitters"
+    }
+}
+
+impl fmt::Display for TransmittersLockError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Could not obtain a lock on the transmitters")
     }
 }
