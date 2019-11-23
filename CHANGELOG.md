@@ -14,5 +14,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - All dependencies on an external database. This should increase portability and simplify some
   aspects of the code because `kpald` now relies on native Rust data structures.
 
+### Fixed
+- HTTP error codes are no longer all 404s.
+
 [Unreleased]: https://github.com/kmdouglass/kpal
 
