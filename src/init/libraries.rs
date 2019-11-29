@@ -122,7 +122,7 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
             }
         };
 
-        if result != LIBRARY_OK {
+        if result != PLUGIN_OK {
             log::error!("Initialization of {} failed: {}", path, result);
             continue;
         }
