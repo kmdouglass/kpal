@@ -13,15 +13,14 @@
 //! 4. a set of functions that comprise the plugin API
 // Import any needed items from the standard and 3rd party libraries.
 use std::boxed::Box;
-use std::convert::TryInto;
+use std::error::Error;
 use std::ffi::{CStr, CString};
-use std::ptr::null;
+use std::fmt;
 
-use libc::{c_int, c_uchar, size_t};
+use libc::c_int;
 
 // Import the tools provided by the plugin library.
 use kpal_plugin::constants::*;
-use kpal_plugin::strings::copy_string;
 use kpal_plugin::Value::*;
 use kpal_plugin::*;
 
@@ -37,10 +36,12 @@ struct Basic {
     attributes: Vec<Attribute>,
 }
 
-impl Basic {
+impl PluginAPI<BasicError> for Basic {
+    type Plugin = Basic;
+
     /// Returns a new instance of the peripheral.
-    fn new() -> Basic {
-        Basic {
+    fn new() -> Result<Basic, BasicError> {
+        Ok(Basic {
             attributes: vec![
                 Attribute {
                     name: CString::new("x").expect("Error creating CString"),
@@ -51,49 +52,41 @@ impl Basic {
                     value: Value::Int(0),
                 },
             ],
-        }
+        })
     }
 
     // The following methods that are implementend by the struct would normally communicate with
     // the peripheral. In this example, they simply return the values stored within the struct.
     /// Returns the name of an attribute.
     ///
-    /// If the attribute that corresponds to the `id` does not exist, then an `AttributeError`
-    /// instance is embedded in the return type. Otherwise, the name is returned as a C-compatible
-    /// `&CStr`.
+    /// If the attribute that corresponds to the `id` does not exist, then a `PluginError` is
+    /// returned. Otherwise, the name is returned as a C-compatible `&CStr`.
     ///
     /// # Arguments
     ///
     /// * `id` - the numeric ID of the attribute
-    fn attribute_name(&self, id: usize) -> Result<&CStr> {
+    fn attribute_name(&self, id: usize) -> Result<&CStr, BasicError> {
         log::debug!("Received request for the name of attribute: {}", id);
         match self.attributes.get(id) {
             Some(attribute) => Ok(&attribute.name),
-            None => Err(AttributeError::new(
-                Action::Get,
-                ATTRIBUTE_DOES_NOT_EXIST,
-                &format!("Attribute at index {} does not exist.", id),
-            )),
+            None => Err(BasicError {
+                error_code: ATTRIBUTE_DOES_NOT_EXIST,
+            }),
         }
     }
 
     /// Returns the value of an attribute.
     ///
-    /// If the attribute that corresponds to the `id` does not exist, then an `AttributeError`
-    /// instance is embedded in the return type. Otherwise, the value is returnd as a C-compatible
-    /// tagged enum.
+    /// If the attribute that corresponds to the `id` does not exist, then a `PluginError` is
+    /// returned. Otherwise, the value is returnd as a C-compatible tagged enum.
     ///
     /// # Arguments
     ///
     /// * `id` - the numeric ID of the attribute
-    fn attribute_value(&self, id: usize) -> Result<Value> {
+    fn attribute_value(&self, id: usize) -> Result<Value, BasicError> {
         log::debug!("Received request for the value of attribute: {}", id);
-        let attribute = self.attributes.get(id).ok_or_else(|| {
-            AttributeError::new(
-                Action::Get,
-                ATTRIBUTE_DOES_NOT_EXIST,
-                &format!("Attribute at index {} does not exist.", id),
-            )
+        let attribute = self.attributes.get(id).ok_or_else(|| BasicError {
+            error_code: ATTRIBUTE_DOES_NOT_EXIST,
         })?;
 
         Ok(attribute.value.clone())
@@ -102,23 +95,19 @@ impl Basic {
     /// Sets the value of the attribute given by the id.
     ///
     /// If the attribute that corresponds to the `id` does not exist, or if the attribute cannot be
-    /// set, then an `AttributeError` instance is embedded in the return type.
+    /// set, then a `PluginError` is returned.
     ///
     /// # Arguments
     ///
     /// * `id` - the numeric ID of the attribute
     /// * `value` - a reference to a value
-    fn attribute_set_value(&mut self, id: usize, value: &Value) -> Result<()> {
+    fn attribute_set_value(&mut self, id: usize, value: &Value) -> Result<(), BasicError> {
         log::debug!("Received request to set the value of attribute: {}", id);
         let current_value = &mut self
             .attributes
             .get_mut(id)
-            .ok_or_else(|| {
-                AttributeError::new(
-                    Action::Get,
-                    ATTRIBUTE_DOES_NOT_EXIST,
-                    &format!("Attribute at index {} does not exist.", id),
-                )
+            .ok_or_else(|| BasicError {
+                error_code: ATTRIBUTE_DOES_NOT_EXIST,
             })?
             .value;
 
@@ -127,12 +116,29 @@ impl Basic {
                 *current_value = (*value).clone();
                 Ok(())
             }
-            _ => Err(AttributeError::new(
-                Action::Set,
-                ATTRIBUTE_TYPE_MISMATCH,
-                &format!("Attribute types do not match {}", id),
-            )),
+            _ => Err(BasicError {
+                error_code: ATTRIBUTE_TYPE_MISMATCH,
+            }),
         }
+    }
+}
+
+#[derive(Debug)]
+struct BasicError {
+    error_code: c_int,
+}
+
+impl Error for BasicError {}
+
+impl fmt::Display for BasicError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Basic error {{ error_code: {} }}", self.error_code)
+    }
+}
+
+impl PluginError for BasicError {
+    fn error_code(&self) -> c_int {
+        self.error_code
     }
 }
 
@@ -154,163 +160,40 @@ pub extern "C" fn kpal_library_init() -> c_int {
 /// pointer to the peripheral and a vtable. The vtable is a struct of function pointers to the
 /// remaining functions in the plugin API.
 #[no_mangle]
-pub extern "C" fn kpal_plugin_init() -> Plugin {
-    let peripheral: Box<Basic> = Box::new(Basic::new());
-    let peripheral = Box::into_raw(peripheral) as *mut Peripheral;
+pub extern "C" fn kpal_plugin_init(plugin: *mut Plugin) -> c_int {
+    let plugin_data = match Basic::new() {
+        Ok(plugin_data) => plugin_data,
+        Err(e) => {
+            log::error!("Plugin initialization failed: {:?}", e);
+            return PLUGIN_INIT_ERR;
+        }
+    };
+    let plugin_data: Box<Basic> = Box::new(plugin_data);
+    let plugin_data = Box::into_raw(plugin_data) as *mut Peripheral;
 
     let vtable = VTable {
         peripheral_free: peripheral_free,
         error_message: error_message,
-        attribute_name: attribute_name,
-        attribute_value: attribute_value,
-        set_attribute_value: set_attribute_value,
+        attribute_name: attribute_name::<Basic, BasicError>,
+        attribute_value: attribute_value::<Basic, BasicError>,
+        set_attribute_value: set_attribute_value::<Basic, BasicError>,
     };
 
-    let plugin = Plugin {
-        peripheral: peripheral,
-        vtable: vtable,
-    };
+    unsafe {
+        plugin.write(Plugin {
+            peripheral: plugin_data,
+            vtable: vtable,
+        });
+    }
 
     log::debug!("Initialized plugin: {:?}", plugin);
-    plugin
-}
-
-// The following functions are required. They are function pointers that belong to a vtable that
-// defines the public plugin API. The functions that are pointed to are directly called by the
-// daemon and wrap the methods that are implemented by the peripheral struct.
-/// Frees the memory associated with the peripheral.
-///
-/// This routine will be called automatically by the daemon and should not be called by any user
-/// code.
-///
-/// # Arguments
-///
-/// * `peripheral` - A pointer to a peripheral struct
-extern "C" fn peripheral_free(peripheral: *mut Peripheral) {
-    if peripheral.is_null() {
-        return;
-    }
-    let peripheral = peripheral as *mut Box<Peripheral>;
-    unsafe {
-        Box::from_raw(peripheral);
-    }
-}
-
-/// Returns an error message to the daemon given an error code.
-///
-/// If an undefined error code is provided, then this function will return a null pointer.
-pub extern "C" fn error_message(error_code: c_int) -> *const c_uchar {
-    let error_code: size_t = match error_code.try_into() {
-        Ok(error_code) => error_code,
-        Err(_) => {
-            log::error!("Unrecognized error code provided");
-            return null();
-        }
-    };
-
-    ERRORS.get(error_code).map_or(null(), |e| e.as_ptr())
-}
-
-/// Writes the name of an attribute to a buffer that is provided by the caller.
-///
-/// This function returns a status code that indicates whether the operation succeeded and the
-/// cause of any possible errors.
-///
-/// # Arguments
-///
-/// * `peripheral` - A pointer to a peripheral struct
-/// * `id` - The id of the attribute
-/// * `buffer` - A buffer of bytes into which the attribute's name will be written
-/// * `length` - The length of the buffer
-extern "C" fn attribute_name(
-    peripheral: *const Peripheral,
-    id: size_t,
-    buffer: *mut c_uchar,
-    length: size_t,
-) -> c_int {
-    //TODO Get rid of asserts
-    assert!(!peripheral.is_null());
-    let peripheral = peripheral as *const Basic;
-    unsafe {
-        let name: &[u8] = match (*peripheral).attribute_name(id) {
-            Ok(name) => name.to_bytes_with_nul(),
-            Err(e) => return e.error_code(),
-        };
-
-        match copy_string(name, buffer, length) {
-            Ok(_) => PLUGIN_OK,
-            Err(_) => UNDEFINED_ERR,
-        }
-    }
-}
-
-/// Writes the value of an attribute to a Value instance that is provided by the caller.
-///
-/// This function returns a status code that indicates whether the operation succeeded and the
-/// cause of any possible errors.
-///
-/// # Arguments
-///
-/// * `peripheral` - A pointer to a peripheral struct
-/// * `id` - The id of the attribute
-/// * `value` - A pointer to a Value enum. The enum is provided by this function's caller.
-extern "C" fn attribute_value(
-    peripheral: *const Peripheral,
-    id: size_t,
-    value: *mut Value,
-) -> c_int {
-    //TODO Get rid of asserts
-    assert!(!peripheral.is_null());
-    let peripheral = peripheral as *const Basic;
-
-    unsafe {
-        match (*peripheral).attribute_value(id) {
-            Ok(new_value) => {
-                log::debug!(
-                    "Response for the value of attribute {}: {:?}",
-                    id,
-                    new_value
-                );
-                *value = new_value
-            }
-            Err(e) => return e.error_code(),
-        };
-    }
-
     PLUGIN_OK
-}
-
-/// Sets the value of an attribute.
-///
-/// This function returns a status code that indicates whether the operation succeeded and the
-/// cause of any possible errors.
-///
-/// # Arguments
-///
-/// * `peripheral` - A pointer to a peripheral struct
-/// * `id` - The id of the attribute
-/// * `value` - A pointer to a Value enum. The enum is provided by this function's caller and will
-/// be copied.
-extern "C" fn set_attribute_value(
-    peripheral: *mut Peripheral,
-    id: size_t,
-    value: *const Value,
-) -> c_int {
-    if peripheral.is_null() || value.is_null() {
-        return UNDEFINED_ERR;
-    }
-    let peripheral = peripheral as *mut Basic;
-
-    unsafe {
-        match (*peripheral).attribute_set_value(id, &*value) {
-            Ok(_) => PLUGIN_OK,
-            Err(e) => e.error_code(),
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use libc::c_uchar;
+
     use super::*;
 
     #[test]
@@ -354,7 +237,7 @@ mod tests {
 
     #[test]
     fn set_attribute_value() {
-        let mut peripheral = Basic::new();
+        let mut peripheral = Basic::new().unwrap();
         let new_values = vec![Value::Float(3.14), Value::Int(4)];
 
         // Test setting each attribute to the new value
@@ -371,7 +254,7 @@ mod tests {
 
     #[test]
     fn set_attribute_wrong_variant() {
-        let mut peripheral = Basic::new();
+        let mut peripheral = Basic::new().unwrap();
         let new_value = Value::Float(42.0);
 
         let result = peripheral.attribute_set_value(1, &new_value);

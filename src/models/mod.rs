@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use libc::{c_double, c_long};
 use libloading::Library as Dll;
 use serde::{Deserialize, Serialize};
 
@@ -15,10 +16,18 @@ pub trait Model {
 #[serde(tag = "variant")]
 pub enum Attribute {
     #[serde(rename(serialize = "integer", deserialize = "integer"))]
-    Int { id: usize, name: String, value: i64 },
+    Int {
+        id: usize,
+        name: String,
+        value: c_long,
+    },
 
     #[serde(rename(serialize = "float", deserialize = "float"))]
-    Float { id: usize, name: String, value: f64 },
+    Float {
+        id: usize,
+        name: String,
+        value: c_double,
+    },
 }
 
 impl Attribute {
@@ -110,9 +119,9 @@ impl PartialEq for Attribute {
 /// state and values understood by the plugin API.
 pub enum Value {
     #[serde(rename(serialize = "integer", deserialize = "integer"))]
-    Int { value: i64 },
+    Int { value: c_long },
     #[serde(rename(serialize = "float", deserialize = "float"))]
-    Float { value: f64 },
+    Float { value: c_double },
 }
 
 impl Into<PluginValue> for Value {

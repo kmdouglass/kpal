@@ -9,20 +9,40 @@ pub mod constants {
 
     pub const PLUGIN_OK: c_int = 0;
     pub const UNDEFINED_ERR: c_int = 1;
-    pub const ATTRIBUTE_DOES_NOT_EXIST: c_int = 2;
-    pub const ATTRIBUTE_TYPE_MISMATCH: c_int = 3;
+    pub const PLUGIN_INIT_ERR: c_int = 2;
+    pub const ATTRIBUTE_DOES_NOT_EXIST: c_int = 3;
+    pub const ATTRIBUTE_TYPE_MISMATCH: c_int = 4;
+    pub const IO_ERR: c_int = 5;
+    pub const NUMERIC_CONVERSION_ERR: c_int = 6;
 }
 mod errors;
-pub mod strings;
+mod ffi;
+mod strings;
 
 use std::cmp::{Eq, PartialEq};
-use std::error;
-use std::ffi::CString;
-use std::fmt;
+use std::error::Error;
+use std::ffi::{CStr, CString};
 
 use libc::{c_double, c_int, c_long, c_uchar, size_t};
 
 pub use errors::ERRORS;
+pub use ffi::*;
+pub use strings::copy_string;
+
+// TODO Add doc strings
+pub trait PluginAPI<E: Error + PluginError> {
+    type Plugin;
+
+    fn new() -> Result<Self::Plugin, E>;
+    fn attribute_name(&self, id: usize) -> Result<&CStr, E>;
+    fn attribute_value(&self, id: usize) -> Result<Value, E>;
+    fn attribute_set_value(&mut self, id: usize, value: &Value) -> Result<(), E>;
+}
+
+pub trait PluginError: std::error::Error {
+    /// Returns the error code of the instance.
+    fn error_code(&self) -> c_int;
+}
 
 /// A Plugin contains the necessary data to work with a plugin across the FFI boundary.
 ///
@@ -38,6 +58,8 @@ pub use errors::ERRORS;
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct Plugin {
+    // TODO Rename this to avoid confusion with the user API's Peripheral (and peripheral_free)
+    // Use plugin_data
     /// A pointer to a peripheral instance.
     pub peripheral: *mut Peripheral,
 
@@ -93,7 +115,7 @@ pub struct VTable {
 }
 
 /// The type signature of the function that returns a new plugin instance.
-pub type KpalPluginInit = extern "C" fn() -> Plugin;
+pub type KpalPluginInit = extern "C" fn(*mut Plugin) -> c_int;
 
 /// A single piece of information that partly determines the state of a peripheral.
 #[derive(Debug)]
@@ -122,75 +144,6 @@ impl PartialEq for Attribute {
 pub enum Value {
     Int(c_long),
     Float(c_double),
-}
-
-/// The type signature of a Result of accessing a peripheral's attribute.
-pub type Result<T> = std::result::Result<T, AttributeError>;
-
-/// An AttributeError is raised when there is a failure to get or set a attribute's value.
-// TODO Make this a general Error type
-#[derive(Debug)]
-pub struct AttributeError {
-    /// The type of action that was performend on the attribute.
-    // TODO Remove Action as it is not used.
-    action: Action,
-
-    /// The error code that was returned by the plugin API.
-    error_code: c_int,
-
-    // TODO Remove this as it is not used.
-    /// A description of the error intended for human consumption.
-    message: String,
-}
-
-impl AttributeError {
-    /// Returns a new AttributeError instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `action` - The type of action that was performed on the attribute
-    /// * `error_code` - The error code that was returned by the plugin API
-    /// * `message` - A description of the error intended for human consumption
-    pub fn new(action: Action, error_code: c_int, message: &str) -> AttributeError {
-        AttributeError {
-            action: action,
-            error_code: error_code,
-            message: String::from(message),
-        }
-    }
-
-    /// Returns the error code of the instance.
-    pub fn error_code(&self) -> c_int {
-        self.error_code
-    }
-
-    /// Returns the error message.
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-}
-
-impl fmt::Display for AttributeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "AttributeError {{ action: {:?}, message {} }}",
-            self.action, self.message
-        )
-    }
-}
-
-impl error::Error for AttributeError {
-    fn description(&self) -> &str {
-        "failed to access attribute value"
-    }
-}
-
-/// Defines the type of actions that may be performed on an Attribute.
-#[derive(Debug, Clone, Copy)]
-pub enum Action {
-    Get,
-    Set,
 }
 
 #[cfg(test)]
