@@ -2,7 +2,7 @@
 
 KPAL is a general-purpose control system for physical computing.
 
-**KPAL is under development.**
+**KPAL is under development. The API will not be considered stable until 1.0.**
 
 ## Overview
 
@@ -44,6 +44,11 @@ Plugins are the means by which peripherals are integrated into KPAL. A plugin us
 library provides is the plugin API. Any programming language that can provide a C language
 interface can be used to write a plugin library.
 
+A plugin combines the data that represents a peripheral's state with the functionality for
+controlling the hardware device that is modeled by the peripheral.
+
 ## Writing plugins
 
-See the [kpal-plugin](kpal-plugin) crate for more information.
+See the [kpal-plugin](kpal-plugin) crate for more information on how to write your own plugins.
+
+[kpal-gpio-cdev](kpal-gpio-cdev) is a plugin crate that controls the output of a single GPIO pin.
