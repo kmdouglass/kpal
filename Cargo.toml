@@ -9,6 +9,7 @@ edition = "2018"
 members = [
     "./",
     "kpal-plugin",
+    "kpal-gpio-cdev",
 ]
 
 [dependencies]

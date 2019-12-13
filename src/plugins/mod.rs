@@ -12,10 +12,12 @@ pub mod messaging;
 
 use std::error::Error;
 use std::fmt;
+use std::mem::MaybeUninit;
 use std::sync::{Arc, Mutex, RwLock};
 
 use libloading::Symbol;
 
+use kpal_plugin::constants::PLUGIN_OK;
 use kpal_plugin::{KpalPluginInit, Plugin};
 
 use crate::init::libraries::TSLibrary;
@@ -76,9 +78,20 @@ unsafe fn kpal_plugin_init(lib: TSLibrary) -> Result<Plugin, PluginInitError> {
         .get(b"kpal_plugin_init\0")
         .map_err(|e| PluginInitError { side: Box::new(e) })?;
 
-    Ok(kpal_plugin_init())
+    let mut plugin = MaybeUninit::<Plugin>::uninit();
+    let result = kpal_plugin_init(plugin.as_mut_ptr());
+
+    if result != PLUGIN_OK {
+        log::error!("Plugin initialization failed: {}", result);
+        return Err(PluginInitError {
+            side: Box::new(FFIError {}),
+        });
+    }
+
+    Ok(plugin.assume_init())
 }
 
+// TODO Refactor errors to use From trait
 /// An error caused by any failure in the Plugin initialization routines.
 #[derive(Debug)]
 pub struct PluginInitError {
@@ -98,6 +111,25 @@ impl Error for PluginInitError {
 impl fmt::Display for PluginInitError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "PluginInitError {{ Cause: {} }}", &*self.side)
+    }
+}
+
+/// An error caused by a failure to initialize the Plugin on the other side of the FFI layer.
+#[derive(Debug)]
+pub struct FFIError {}
+
+impl Error for FFIError {
+    fn description(&self) -> &str {
+        "Failed to intialize the plugin on the other side of the FFI"
+    }
+}
+
+impl fmt::Display for FFIError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Failed to intialize the plugin on the other side of the FFI"
+        )
     }
 }
 
