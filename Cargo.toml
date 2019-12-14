@@ -3,6 +3,12 @@ name = "kpal"
 version = "0.1.0"
 authors = ["Kyle M. Douglass <kyle.douglass@protonmail.com>"]
 edition = "2018"
+description = "An extensible control system for physical computing"
+repository = "https://github.com/kmdouglass/kpal"
+readme = "README.md"
+keywords = ["linux", "embedded", "kpal"]
+categories = ["embedded", "hardware-support", "science"]
+license-file = "LICENSE"
 
 [workspace]
 
@@ -13,7 +19,7 @@ members = [
 ]
 
 [dependencies]
-kpal-plugin = { path = "kpal-plugin" }
+kpal-plugin = { path = "kpal-plugin", version = "0.1.0" }
 dirs = "1.0"
 env_logger = "0.6"
 lazy_static = "1.3"
