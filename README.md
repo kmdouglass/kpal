@@ -1,6 +1,6 @@
 # Kyle's Peripheral Abstraction Layer [![CircleCI](https://circleci.com/gh/kmdouglass/kpal.svg?style=svg)](https://circleci.com/gh/kmdouglass/kpal)
 
-KPAL is a general-purpose control system for physical computing.
+KPAL is an extensible control system for physical computing.
 
 **KPAL is under development. The API will not be considered stable until 1.0.**
 
