@@ -143,7 +143,7 @@ impl PluginError for BasicError {
 }
 
 // The following functions are required. They are used by the daemon to initialize the library and
-// new plugin instances, as well as to provide error information back to the daemon.
+// new plugin instances.
 /// Initializes the library.
 ///
 /// This function is called only once by the daemon. It is called when a library is first loaded

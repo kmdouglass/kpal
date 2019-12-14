@@ -58,8 +58,10 @@ pub extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError>(
     buffer: *mut c_uchar,
     length: size_t,
 ) -> c_int {
-    //TODO Get rid of asserts
-    assert!(!peripheral.is_null());
+    if peripheral.is_null() {
+        log::error!("peripheral pointer is null");
+        return NULL_PTR_ERR;
+    }
     let peripheral = peripheral as *const T;
     unsafe {
         let name: &[u8] = match (*peripheral).attribute_name(id) {
@@ -89,8 +91,10 @@ pub extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError>(
     id: size_t,
     value: *mut Value,
 ) -> c_int {
-    //TODO Get rid of asserts
-    assert!(!peripheral.is_null());
+    if peripheral.is_null() {
+        log::error!("peripheral pointer is null");
+        return NULL_PTR_ERR;
+    }
     let peripheral = peripheral as *const T;
 
     unsafe {
@@ -126,14 +130,22 @@ pub extern "C" fn set_attribute_value<T: PluginAPI<E>, E: PluginError>(
     id: size_t,
     value: *const Value,
 ) -> c_int {
-    if peripheral.is_null() || value.is_null() {
-        return UNDEFINED_ERR;
+    if peripheral.is_null() {
+        log::error!("peripheral pointer is null");
+        return NULL_PTR_ERR;
+    }
+    if value.is_null() {
+        log::error!("value pointer is null");
+        return NULL_PTR_ERR;
     }
     let peripheral = peripheral as *mut T;
 
     unsafe {
         match (*peripheral).attribute_set_value(id, &*value) {
-            Ok(_) => PLUGIN_OK,
+            Ok(_) => {
+                log::debug!("Set attribute {} to {:?}", id, *value);
+                PLUGIN_OK
+            }
             Err(e) => e.error_code(),
         }
     }

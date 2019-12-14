@@ -91,7 +91,6 @@ unsafe fn kpal_plugin_init(lib: TSLibrary) -> Result<Plugin, PluginInitError> {
     Ok(plugin.assume_init())
 }
 
-// TODO Refactor errors to use From trait
 /// An error caused by any failure in the Plugin initialization routines.
 #[derive(Debug)]
 pub struct PluginInitError {

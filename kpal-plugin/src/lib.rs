@@ -2,19 +2,6 @@
 //!
 //! See the examples folder for ideas on how to implement the datatypes and methods defined in this
 //! library.
-pub mod constants {
-    // TODO Move these inside the errors module and get rid of the constants module
-    //! Constants and return codes used by Plugins to communicate the result of function calls.
-    use libc::c_int;
-
-    pub const PLUGIN_OK: c_int = 0;
-    pub const UNDEFINED_ERR: c_int = 1;
-    pub const PLUGIN_INIT_ERR: c_int = 2;
-    pub const ATTRIBUTE_DOES_NOT_EXIST: c_int = 3;
-    pub const ATTRIBUTE_TYPE_MISMATCH: c_int = 4;
-    pub const IO_ERR: c_int = 5;
-    pub const NUMERIC_CONVERSION_ERR: c_int = 6;
-}
 mod errors;
 mod ffi;
 mod strings;
@@ -25,26 +12,35 @@ use std::ffi::{CStr, CString};
 
 use libc::{c_double, c_int, c_long, c_uchar, size_t};
 
+pub use errors::constants;
 pub use errors::ERRORS;
 pub use ffi::*;
 pub use strings::copy_string;
 
-// TODO Add doc strings
+/// The set of functions that must be implemented by a plugin.
 pub trait PluginAPI<E: Error + PluginError> {
     type Plugin;
 
+    /// Initializes and returns a new instance of the plugin.
     fn new() -> Result<Self::Plugin, E>;
+
+    /// Returns the name of an attribute of the plugin.
     fn attribute_name(&self, id: usize) -> Result<&CStr, E>;
+
+    /// Returns the value of an attribute of the plugin.
     fn attribute_value(&self, id: usize) -> Result<Value, E>;
+
+    /// Sets the value of an attribute.
     fn attribute_set_value(&mut self, id: usize, value: &Value) -> Result<(), E>;
 }
 
+/// The set of functions that must be implemented by a plugin library's main error type.
 pub trait PluginError: std::error::Error {
     /// Returns the error code of the instance.
     fn error_code(&self) -> c_int;
 }
 
-/// A Plugin contains the necessary data to work with a plugin across the FFI boundary.
+/// A Plugin combines the data that represents a peripheral's state and with its functionality.
 ///
 /// This struct holds a raw pointer to a peripheral that is created by the plugin library. In
 /// addition, it contains the vtable of function pointers defined by the C API and implemented
@@ -58,9 +54,7 @@ pub trait PluginError: std::error::Error {
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct Plugin {
-    // TODO Rename this to avoid confusion with the user API's Peripheral (and peripheral_free)
-    // Use plugin_data
-    /// A pointer to a peripheral instance.
+    /// A pointer to a struct containing the state of a peripheral.
     pub peripheral: *mut Peripheral,
 
     /// The table of function pointers that define part of the plugin API.
@@ -68,7 +62,7 @@ pub struct Plugin {
 }
 
 impl Drop for Plugin {
-    /// Frees the memory allocated to the plugin.
+    /// Frees the memory allocated to the peripheral data.
     fn drop(&mut self) {
         (self.vtable.peripheral_free)(self.peripheral);
     }
@@ -76,10 +70,10 @@ impl Drop for Plugin {
 
 unsafe impl Send for Plugin {}
 
-/// An opaque struct that contains the peripheral's data.
+/// An opaque struct that contains the state of an individual peripheral.
 ///
 /// In Rust, an opaque struct is defined as a struct with a field that is a zero-length array of
-/// unsigned 8-bit integers. It is used to hide the peripheral's data, forcing all interactions
+/// unsigned 8-bit integers. It is used to hide the peripheral's state, forcing all interactions
 /// with the data through the functions in the vtable instead.
 #[derive(Debug)]
 #[repr(C)]
@@ -87,7 +81,7 @@ pub struct Peripheral {
     _private: [u8; 0],
 }
 
-/// A table of function pointers that comprise the plugin API.
+/// A table of function pointers that comprise the plugin API for the foreign function interface.
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct VTable {
