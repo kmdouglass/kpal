@@ -133,7 +133,8 @@ fn set_up() -> Result<Context, io::Error> {
     // Set up the temporary directory to hold library files
     let library_dir = tempdir()?;
     let mut library_file_src = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    library_file_src.push(format!("target/debug/examples/{}", LIBRARY_FILENAME));
+    library_file_src.push(target_profile());
+    library_file_src.push(format!("examples/{}", LIBRARY_FILENAME));
 
     let mut library_file_dest = PathBuf::from(library_dir.path());
     library_file_dest.push(LIBRARY_FILENAME);
@@ -142,7 +143,8 @@ fn set_up() -> Result<Context, io::Error> {
 
     // Find the kpald binary
     let mut bin_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    bin_dir.push("target/debug/kpald");
+    bin_dir.push(target_profile());
+    bin_dir.push("kpald");
 
     // Grab the server IP address and port from the environment in the form $ADDRESS:$PORT
     let server_addr: String = env::var_os("SERVER_ADDRESS")
@@ -224,6 +226,32 @@ fn start_daemon(
     }
 
     Ok(daemon)
+}
+
+/// Determines the location of the test artifacts relative to the root directory.
+///
+/// This function determines which artifacts to use for the integration tests according to this
+/// rule: if the target/release folder exists, look in there for artifacts. Otherwise, look inside
+/// the target/debug folder.
+///
+/// The reason for this function is that I do not currently know of way for the test runner to
+/// determine which profile is being used to run the tests. The function uses the debug profile as
+/// the fallback because debug artifacts are more likely to exist and because the presence of
+/// release artifacts likely indicates that we are in a special situation in which we want to be
+/// sure that we use only the release artifacts, e.g. in the CI release workflow.
+fn target_profile() -> PathBuf {
+    let mut release = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    release.push("target/release");
+    let mut debug = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    debug.push("target/debug");
+
+    if release.exists() {
+        release
+    } else if debug.exists() {
+        debug
+    } else {
+        panic!("Cannot find library artifact for testing")
+    }
 }
 
 /// Indicates that an error occured when starting the daemon.
