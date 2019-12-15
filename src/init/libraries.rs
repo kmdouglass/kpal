@@ -265,8 +265,21 @@ mod tests {
     fn load_peripherals_loads_library_files() {
         set_up();
 
-        let mut lib = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        lib.push("target/debug/examples/libbasic-plugin.so");
+        // Prefer using the release artifact for testing over debug
+        let lib = {
+            let mut release = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            release.push("target/release/examples/libbasic-plugin.so");
+            let mut debug = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            debug.push("target/debug/examples/libbasic-plugin.so");
+
+            if release.exists() {
+                release
+            } else if debug.exists() {
+                debug
+            } else {
+                panic!("Cannot find library artifact for testing")
+            }
+        };
 
         let mut libs: Vec<PathBuf> = Vec::new();
         libs.push(lib);

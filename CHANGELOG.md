@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2019-12-15
+### Fixed
+- The integration and unit tests no longer look in only the `target/debug` directory for test
+  artifacts. Instead, they search first inside `target/release` and then fall back to
+  `target/debug` if the first folder does not exist. This bug was preventing the implementation of
+  a release workflow on the CI.
+
 ## [0.1.0] - 2019-12-14
 ### Added
 - A `CHANGELOG.md` file to track project changes.
@@ -31,5 +38,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The Daemon now uses C datatypes instead of Rust datatypes for values. This fixes an issue where
   KPAL would not compile on 32-bit processors due to different integer sizes.
 
+[Unreleased]: https://github.com/kmdouglass/kpal/compare/0.1.0...HEAD
 [0.1.0]: https://github.com/kmdouglass/kpal/releases/tag/0.1.0
 
