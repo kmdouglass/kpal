@@ -2,23 +2,136 @@ version: 2
 jobs:
   build:
     docker:
-      - image: rust:1
-
+      - image: kmdouglass/rust-builder-linux-x86_64
     steps:
       - checkout
-
+      - restore_cache:
+          keys:
+            - v1-build-cache-{{ checksum "Cargo.lock" }}
+            - v1-build-cache-
       - run:
-          name: Check formatting
+          name: Check codestyle
           command: |
-            rustup component add rustfmt
+            rustfmt --version
             cargo fmt -- --check
-
       - run:
           name: Build all targets
-          command: cargo build --all --all-targets
-
+          command: |
+            rustc --version --verbose
+            cargo --version --verbose
+            cargo build --release --all --all-targets
       - run:
           name: Test all targets
-          command: cargo test --all --all-targets
+          command: cargo test --release --all --all-targets
           environment:
             SERVER_ADDRESS: 0.0.0.0:8080
+      - persist_to_workspace:
+          root: target
+          paths:
+            - release/kpald
+            - release/libkpal_gpio_cdev.so
+      - save_cache:
+          key: v1-build-cache-{{ checksum "Cargo.lock" }}
+          paths:
+            - "~/.cargo"
+            - "./target"
+  publish-crates.io-dry-run:
+    docker:
+      - image: kmdouglass/rust-builder-linux-x86_64
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-build-cache-{{ checksum "Cargo.lock" }}
+            - v1-build-cache-
+      - run:
+          name: Login to crates.io
+          command: cargo login ${CRATESIO_TOKEN}
+      - run:
+          name: Publish kpal-plugin (dry-run)
+          command: |
+            pushd kpal-plugin
+            cargo publish --dry-run
+            popd
+  publish-github-release:
+    docker:
+      - image: cibuilds/github
+    steps:
+      - attach_workspace:
+          at: /tmp/target
+      - run:
+          name: Package artifacts
+          command: |
+            pushd /tmp/target/release
+            tar -czvf kpal-linux-x86_64.tar.gz kpald libkpal_gpio_cdev.so
+            popd
+      - run:
+          name: Publish artifacts on GitHub
+          command: |
+            ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} \
+                -c ${CIRCLE_SHA1} ${CIRCLE_TAG} /tmp/target/release/kpal-linux-x86_64.tar.gz
+  publish-crates.io:
+    docker:
+      - image: kmdouglass/rust-builder-linux-x86_64
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-build-cache-{{ checksum "Cargo.lock" }}
+            - v1-build-cache-
+      - run:
+          name: Publish kpal-plugin
+          command: |
+            pushd kpal-plugin
+            cargo publish
+            popd
+      - run:
+          name: Publish kpal
+          command: cargo publish
+      - run:
+          name: Publish kpal-gpio-cdev
+          command: |
+            pushd kpal-gpio-cdev
+            cargo publish
+            popd
+
+workflows:
+  version: 2
+  main:
+    jobs:
+      - build:
+          filters:
+            tags:
+              only: /.*/
+      - publish-crates.io-dry-run:
+          requires:
+            - build
+          filters:
+            tags:
+              only: /.*/
+      - publish-github-release:
+          requires:
+            - build
+          filters:
+            tags:
+              only: /^\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/
+      - wait-for-approval:
+          type: approval
+          requires:
+            - publish-crates.io-dry-run
+            - publish-github-release
+          filters:
+            tags:
+              only: /^\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/
+      - publish-crates.io:
+          requires:
+            - wait-for-approval
+          filters:
+            tags:
+              only: /^\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/
