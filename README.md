@@ -1,7 +1,7 @@
 # Kyle's Peripheral Abstraction Layer 
 
 [![CircleCI](https://circleci.com/gh/kmdouglass/kpal.svg?style=svg)](https://circleci.com/gh/kmdouglass/kpal)
-[![Docs.rs](https://docs.rs/kpal-plugin/badge.svg)](https://docs.rs/kpal-plugin)
+[![Crates.io](https://img.shields.io/crates/v/kpal)](https://crates.io/crates/kpal)
 
 KPAL is an extensible control system for physical computing.
 
