@@ -1,5 +1,7 @@
 # KPAL Plugins
 
+[![Docs.rs](https://docs.rs/kpal-plugin/badge.svg)](https://docs.rs/kpal-plugin)
+
 A library that lets you incorporate new peripherals into
 [KPAL](https://github.com/kmdouglass/kpal).
 
