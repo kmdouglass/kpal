@@ -1,8 +1,17 @@
-# Kyle's Peripheral Abstraction Layer [![CircleCI](https://circleci.com/gh/kmdouglass/kpal.svg?style=svg)](https://circleci.com/gh/kmdouglass/kpal)
+# Kyle's Peripheral Abstraction Layer 
+
+[![CircleCI](https://circleci.com/gh/kmdouglass/kpal.svg?style=svg)](https://circleci.com/gh/kmdouglass/kpal)
+[![Docs.rs](https://docs.rs/kpal-plugin/badge.svg)](https://docs.rs/kpal-plugin)
 
 KPAL is an extensible control system for physical computing.
 
-**KPAL is under development. The API will not be considered stable until 1.0.**
+## Documentation
+
+**KPAL is under development. The API will not be considered stable until 1.0 is released.**
+
+- [kpal-plugin](https://docs.rs/kpal-plugin/0.1.0/kpal_plugin/) - Used to write plugins for KPAL
+- [kpal-gpio-cdev](https://docs.rs/kpal-gpio-cdev/0.1.0/kpal_gpio_cdev/) - Controls the GPIO pins
+  on a Raspberry Pi
 
 ## Overview
 
@@ -14,7 +23,7 @@ two application programming interfaces (APIs):
   including smart phones
 - **the plugin API** A high-level plugin interface that allows KPAL to communicate with
   peripherals such as senors, motors, and cameras
-  
+
 ## Core components
 
 ![High level architecture of KPAL](./resources/img/high_level_architecture.svg)
@@ -46,9 +55,3 @@ interface can be used to write a plugin library.
 
 A plugin combines the data that represents a peripheral's state with the functionality for
 controlling the hardware device that is modeled by the peripheral.
-
-## Writing plugins
-
-See the [kpal-plugin](kpal-plugin) crate for more information on how to write your own plugins.
-
-[kpal-gpio-cdev](kpal-gpio-cdev) is a plugin crate that controls the output of a single GPIO pin.

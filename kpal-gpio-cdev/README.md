@@ -1,5 +1,7 @@
 # kpal-gpio-cdev
 
+[![Docs.rs](https://docs.rs/kpal-gpio-cdev/badge.svg)](https://docs.rs/kpal-gpio-cdev)
+
 A KPAL plugin for the Linux GPIO character device API.
 
 ## Overview
