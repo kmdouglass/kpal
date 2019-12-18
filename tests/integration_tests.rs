@@ -119,7 +119,7 @@ struct PatchData {
 /// Data that specifies the context within which the test is run.
 #[derive(Debug)]
 struct Context {
-    bin_dir: PathBuf,
+    bin_exe: PathBuf,
     daemon: Child,
     library_dir: TempDir,
     server_addr: String,
@@ -133,7 +133,7 @@ fn set_up() -> Result<Context, io::Error> {
     // Set up the temporary directory to hold library files
     let library_dir = tempdir()?;
     let mut library_file_src = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    library_file_src.push(target_profile());
+    library_file_src.push(artifacts_dir());
     library_file_src.push(format!("examples/{}", LIBRARY_FILENAME));
 
     let mut library_file_dest = PathBuf::from(library_dir.path());
@@ -142,9 +142,9 @@ fn set_up() -> Result<Context, io::Error> {
     fs::copy(library_file_src.as_path(), library_file_dest.as_path())?;
 
     // Find the kpald binary
-    let mut bin_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    bin_dir.push(target_profile());
-    bin_dir.push("kpald");
+    let mut bin_exe = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    bin_exe.push(artifacts_dir());
+    bin_exe.push("kpald");
 
     // Grab the server IP address and port from the environment in the form $ADDRESS:$PORT
     let server_addr: String = env::var_os("SERVER_ADDRESS")
@@ -156,7 +156,7 @@ fn set_up() -> Result<Context, io::Error> {
 
     // Start the server
     let daemon = start_daemon(
-        bin_dir.as_path(),
+        bin_exe.as_path(),
         library_dir.path(),
         &server_addr,
         &server_url,
@@ -164,7 +164,7 @@ fn set_up() -> Result<Context, io::Error> {
     .unwrap();
 
     Ok(Context {
-        bin_dir,
+        bin_exe,
         daemon,
         library_dir,
         server_addr,
@@ -187,17 +187,17 @@ fn tear_down(mut context: Context) {
 ///
 /// # Arguments
 ///
-/// * `bin_dir` - The location of the daemon's binary file
+/// * `bin_exe` - The location of the daemon's binary file
 /// * `library_dir` - The location of the peripheral library files
 /// * `server_addr` - The address of the server in the form $ADDRESS:$PORT
 /// * `server_url` - The URL of the server in the form $SCHEME://$ADDRESS:$PORT
 fn start_daemon(
-    bin_dir: &Path,
+    bin_exe: &Path,
     library_dir: &Path,
     server_addr: &str,
     server_url: &Url,
 ) -> Result<Child, StartDaemonError> {
-    let mut daemon = Command::new(bin_dir)
+    let mut daemon = Command::new(bin_exe)
         .arg("--library-dir")
         .arg(library_dir)
         .arg("--server-address")
@@ -228,30 +228,15 @@ fn start_daemon(
     Ok(daemon)
 }
 
-/// Determines the location of the test artifacts relative to the root directory.
+/// Determines the location of the build artifacts.
 ///
-/// This function determines which artifacts to use for the integration tests according to this
-/// rule: if the target/release folder exists, look in there for artifacts. Otherwise, look inside
-/// the target/debug folder.
-///
-/// The reason for this function is that I do not currently know of way for the test runner to
-/// determine which profile is being used to run the tests. The function uses the debug profile as
-/// the fallback because debug artifacts are more likely to exist and because the presence of
-/// release artifacts likely indicates that we are in a special situation in which we want to be
-/// sure that we use only the release artifacts, e.g. in the CI release workflow.
-fn target_profile() -> PathBuf {
-    let mut release = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    release.push("target/release");
-    let mut debug = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    debug.push("target/debug");
-
-    if release.exists() {
-        release
-    } else if debug.exists() {
-        debug
-    } else {
-        panic!("Cannot find library artifact for testing")
-    }
+/// This function determines which artifacts to use for the integration tests by finding the
+/// location of the current test binary. Everything else if located relative to this location.
+fn artifacts_dir() -> PathBuf {
+    let mut dir = env::current_exe().expect("Could not determine current executable");
+    dir.pop(); // Drop executable name
+    dir.pop(); // Move up one directory from deps
+    dir
 }
 
 /// Indicates that an error occured when starting the daemon.
