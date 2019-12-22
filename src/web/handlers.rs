@@ -18,7 +18,7 @@ use crate::plugins::messaging::{Message, PluginError, Transmitter};
 use crate::plugins::PluginInitError;
 
 /// Handles the GET /api/v0/libraries endpoint.
-pub fn get_libraries(libs: &Vec<TSLibrary>) -> Result<Response> {
+pub fn get_libraries(libs: &[TSLibrary]) -> Result<Response> {
     let mut result = Vec::new();
     for lib in libs {
         result.push(lib.lock()?.clone());
@@ -28,11 +28,11 @@ pub fn get_libraries(libs: &Vec<TSLibrary>) -> Result<Response> {
 }
 
 /// Handles the GET /api/v0/libraries/{id} endpoint.
-pub fn get_library(id: usize, libs: &Vec<TSLibrary>) -> Result<Response> {
+pub fn get_library(id: usize, libs: &[TSLibrary]) -> Result<Response> {
     let lib = libs
         .get(id)
         .ok_or(ResourceNotFoundError {
-            id: id,
+            id,
             name: String::from(Library::key()),
         })?
         .lock()?;
@@ -45,7 +45,7 @@ pub fn get_peripheral(id: usize, txs: Arc<RwLock<Transmitters>>) -> Result<Respo
     let ptx = txs
         .get(&id)
         .ok_or(ResourceNotFoundError {
-            id: id,
+            id,
             name: String::from(Peripheral::key()),
         })?
         .lock()?;
@@ -56,7 +56,7 @@ pub fn get_peripheral(id: usize, txs: Arc<RwLock<Transmitters>>) -> Result<Respo
 
     rx.recv_timeout(REQUEST_TIMEOUT)?
         .map(|attr| Response::json(&attr))
-        .map_err(|e| RequestHandlerError::from(e))
+        .map_err(RequestHandlerError::from)
 }
 
 /// Handles the GET /api/v0/peripherals endpoint.
@@ -83,7 +83,7 @@ pub fn get_peripherals(txs: Arc<RwLock<Transmitters>>) -> Result<Response> {
 /// Handles the POST /api/v0/peripherals endpoint.
 pub fn post_peripherals(
     request: &Request,
-    libs: &Vec<TSLibrary>,
+    libs: &[TSLibrary],
     txs: Arc<RwLock<Transmitters>>,
 ) -> Result<Response> {
     let mut periph: Peripheral = json_input(&request)?;
@@ -123,7 +123,7 @@ pub fn get_peripheral_attribute(
     let ptx = txs
         .get(&id)
         .ok_or(ResourceNotFoundError {
-            id: id,
+            id,
             name: String::from(Peripheral::key()),
         })?
         .lock()?;
@@ -134,7 +134,7 @@ pub fn get_peripheral_attribute(
 
     rx.recv_timeout(REQUEST_TIMEOUT)?
         .map(|attr| Response::json(&attr))
-        .map_err(|e| RequestHandlerError::from(e))
+        .map_err(RequestHandlerError::from)
 }
 
 /// Handles the PATCH /api/v0/peripherals/{id}/attributes/{attr_id} endpoint.
@@ -150,7 +150,7 @@ pub fn patch_peripheral_attribute(
     let ptx = txs
         .get(&id)
         .ok_or(ResourceNotFoundError {
-            id: id,
+            id,
             name: String::from(Peripheral::key()),
         })?
         .lock()?;
@@ -162,7 +162,7 @@ pub fn patch_peripheral_attribute(
 
     rx.recv_timeout(REQUEST_TIMEOUT)?
         .map(|attr| Response::json(&attr))
-        .map_err(|e| RequestHandlerError::from(e))
+        .map_err(RequestHandlerError::from)
 }
 
 /// Handles the GET /api/v0/peripherals/{id}/attributes endpoint.
@@ -171,7 +171,7 @@ pub fn get_peripheral_attributes(id: usize, txs: Arc<RwLock<Transmitters>>) -> R
     let ptx = txs
         .get(&id)
         .ok_or(ResourceNotFoundError {
-            id: id,
+            id,
             name: String::from(Peripheral::key()),
         })?
         .lock()?;
@@ -182,7 +182,7 @@ pub fn get_peripheral_attributes(id: usize, txs: Arc<RwLock<Transmitters>>) -> R
 
     rx.recv_timeout(REQUEST_TIMEOUT)?
         .map(|attr| Response::json(&attr))
-        .map_err(|e| RequestHandlerError::from(e))
+        .map_err(RequestHandlerError::from)
 }
 
 /// Finds and returns the next largest integer to serve as a new peripheral ID.
@@ -252,7 +252,7 @@ impl fmt::Display for RequestHandlerError {
 impl From<JsonError> for RequestHandlerError {
     fn from(error: JsonError) -> Self {
         RequestHandlerError {
-            body: String::from(format!("Error when serializing to JSON: {}", error)),
+            body: format!("Error when serializing to JSON: {}", error),
             http_status_code: 500,
         }
     }
@@ -261,7 +261,7 @@ impl From<JsonError> for RequestHandlerError {
 impl From<ResourceNotFoundError> for RequestHandlerError {
     fn from(error: ResourceNotFoundError) -> Self {
         RequestHandlerError {
-            body: String::from(format!("Error when accessing a resource: {}", error)),
+            body: format!("Error when accessing a resource: {}", error),
             http_status_code: 404,
         }
     }
@@ -279,7 +279,7 @@ impl From<PluginError> for RequestHandlerError {
 impl From<PluginInitError> for RequestHandlerError {
     fn from(error: PluginInitError) -> Self {
         RequestHandlerError {
-            body: String::from(format!("Error during plugin intitialization: {}", error)),
+            body: format!("Error during plugin intitialization: {}", error),
             http_status_code: 500,
         }
     }
@@ -288,7 +288,7 @@ impl From<PluginInitError> for RequestHandlerError {
 impl<'a> From<PoisonError<MutexGuard<'a, Library>>> for RequestHandlerError {
     fn from(error: PoisonError<MutexGuard<Library>>) -> Self {
         RequestHandlerError {
-            body: String::from(format!("Library mutex is poisoned: {}", error)),
+            body: format!("Library mutex is poisoned: {}", error),
             http_status_code: 500,
         }
     }
@@ -297,7 +297,7 @@ impl<'a> From<PoisonError<MutexGuard<'a, Library>>> for RequestHandlerError {
 impl<'a> From<PoisonError<MutexGuard<'a, Transmitter>>> for RequestHandlerError {
     fn from(error: PoisonError<MutexGuard<Transmitter>>) -> Self {
         RequestHandlerError {
-            body: String::from(format!("Peripheral thread is poisoned: {}", error)),
+            body: format!("Peripheral thread is poisoned: {}", error),
             http_status_code: 500,
         }
     }
@@ -306,7 +306,7 @@ impl<'a> From<PoisonError<MutexGuard<'a, Transmitter>>> for RequestHandlerError 
 impl<'a> From<PoisonError<RwLockReadGuard<'a, Transmitters>>> for RequestHandlerError {
     fn from(error: PoisonError<RwLockReadGuard<Transmitters>>) -> Self {
         RequestHandlerError {
-            body: String::from(format!("Transmitters thread is poisoned: {}", error)),
+            body: format!("Transmitters thread is poisoned: {}", error),
             http_status_code: 500,
         }
     }
@@ -315,7 +315,7 @@ impl<'a> From<PoisonError<RwLockReadGuard<'a, Transmitters>>> for RequestHandler
 impl From<RecvTimeoutError> for RequestHandlerError {
     fn from(error: RecvTimeoutError) -> Self {
         RequestHandlerError {
-            body: String::from(format!("Timeout while waiting on peripheral: {}", error)),
+            body: format!("Timeout while waiting on peripheral: {}", error),
             http_status_code: 500,
         }
     }
@@ -324,7 +324,7 @@ impl From<RecvTimeoutError> for RequestHandlerError {
 impl From<SendError<Message>> for RequestHandlerError {
     fn from(error: SendError<Message>) -> Self {
         RequestHandlerError {
-            body: String::from(format!("Unable to send message to peripheral: {}", error)),
+            body: format!("Unable to send message to peripheral: {}", error),
             http_status_code: 500,
         }
     }

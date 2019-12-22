@@ -50,16 +50,8 @@ impl Attribute {
     /// * `name` The attribute's name
     pub fn new(value: PluginValue, id: usize, name: String) -> Attribute {
         match value {
-            PluginValue::Int(value) => Attribute::Int {
-                id: id,
-                name: name,
-                value: value,
-            },
-            PluginValue::Float(value) => Attribute::Float {
-                id: id,
-                name: name,
-                value: value,
-            },
+            PluginValue::Int(value) => Attribute::Int { id, name, value },
+            PluginValue::Float(value) => Attribute::Float { id, name, value },
         }
     }
 }
@@ -248,6 +240,8 @@ impl Model for Peripheral {
 mod tests {
     use super::*;
 
+    use std::f64::consts::PI;
+
     use kpal_plugin::Value as PluginValue;
 
     #[test]
@@ -329,7 +323,7 @@ mod tests {
         let new_attr = Attribute::Float {
             id: context.id,
             name: context.name,
-            value: 3.14159,
+            value: PI,
         };
 
         assert_ne!(context.peripheral.attributes[0], new_attr);
@@ -344,7 +338,7 @@ mod tests {
         let new_attr = Attribute::Float {
             id: context.id,
             name: context.name.clone(),
-            value: 3.14159,
+            value: PI,
         };
 
         for attr in context.peripheral.attributes.clone() {
@@ -360,11 +354,11 @@ mod tests {
     #[test]
     fn test_peripheral_set_attribute_from_value() {
         let mut context = set_up();
-        let new_value = PluginValue::Float(3.14159);
+        let new_value = PluginValue::Float(PI);
         let new_attr = Attribute::Float {
             id: context.id,
             name: context.name.clone(),
-            value: 3.14159,
+            value: PI,
         };
 
         assert_ne!(context.peripheral.attributes[0], new_attr);
@@ -400,10 +394,10 @@ mod tests {
         ];
 
         let mut peripheral = Peripheral {
-            library_id: library_id,
+            library_id,
             name: name.clone(),
             attributes: attributes.clone(),
-            id: id,
+            id,
             links: Vec::new(),
         };
         peripheral.set_attribute_links();

@@ -148,7 +148,7 @@ fn set_up() -> Result<Context, io::Error> {
 
     // Grab the server IP address and port from the environment in the form $ADDRESS:$PORT
     let server_addr: String = env::var_os("SERVER_ADDRESS")
-        .unwrap_or(OsString::from("0.0.0.0:8000"))
+        .unwrap_or_else(|| OsString::from("0.0.0.0:8000"))
         .into_string()
         .expect("Could not get SERVER_ADDRESS environment variable");
     let server_url =

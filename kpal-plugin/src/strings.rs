@@ -25,7 +25,7 @@ pub unsafe fn copy_string(
         return Err(BufferOverflowError {});
     }
 
-    &buffer[..string.len()].copy_from_slice(string);
+    buffer[..string.len()].copy_from_slice(string);
 
     Ok(())
 }
@@ -63,7 +63,7 @@ mod tests {
         unsafe {
             match copy_string(&bytes, buffer_p, buffer.len()) {
                 Ok(_) => (),
-                Err(_) => panic!("Failed to copy string to buffer"),
+                Err(_e) => panic!("Failed to copy string to buffer"),
             }
         }
 
@@ -80,10 +80,9 @@ mod tests {
         let bytes = string.to_bytes_with_nul();
 
         unsafe {
-            match copy_string(&bytes, buffer_p, buffer.len()) {
-                Ok(_) => panic!("Failed to return an error due to a buffer overflow"),
-                _ => (),
-            }
+            if copy_string(&bytes, buffer_p, buffer.len()).is_ok() {
+                panic!("Failed to return an error due to a buffer overflow")
+            };
         }
     }
 }

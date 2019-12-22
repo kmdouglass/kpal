@@ -41,7 +41,7 @@ pub fn init(
 
     init::attributes(peripheral, &plugin);
 
-    let executor = Executor::new(plugin, peripheral.clone(), lib.clone());
+    let executor = Executor::new(plugin, peripheral.clone(), lib);
 
     let tx = Mutex::new(executor.tx.clone());
     txs.write()

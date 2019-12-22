@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2019-12-22
+## [Unreleased] - 2019-12-23
 ### Added
 - A Dockerfile was added at
   [resources/docker/rust-linux-x86_64/Dockerfile](resources/docker/rust-linux-x86_64/Dockerfile)
@@ -20,9 +20,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [here](resources/docker/rust_cross_armv7-linux-x86_64/Dockerfile) and
   [here](resources/docker/kpal_tester-linux-armv7/Dockerfile), respectively.
 - Added the Dependabot dependencey management service to the GitHub repo.
+- Added steps to the CI to check that the code has been linted with `cargo clippy`.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.
+- The entire KPAL codebase is now linted with `clippy`.
 
 ### Fixed
 - The integration and unit tests no longer look in only the `target/debug` directory for test
