@@ -4,28 +4,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2019-12-16
+## [Unreleased] - 2019-12-22
 ### Added
 - A Dockerfile was added at
   [resource/docker/rust-builder-linux-x86_64/Dockerfile](resource/docker/rust-builder-linux-x86_64/Dockerfile)
-  that defines the image in which the CI job is run. The Docker file is automatically built and
-  hosted on DockerHub.
+  that defines the image in which the x86_64 CI jobs are run. The Docker file is automatically
+  built and hosted on DockerHub.
 - A new workflow was added to the CI configuration for releases. The new workflow is called `main`
   and has two pathways. One is triggered by a commit and one by pushing a tag to the Git repo. The
   pathway that is triggered by a commit contains a subset of the jobs contained by the one that is
   triggered by tag. This enables a release-from-tag strategy.
 - A build cache was added to the CI that includes the `~/.cargo` and `target` folders.
+- A job was added to the CI to build artifacts for the ARMv7 architecture (the one used by the
+  Raspberry Pi). The Dockerfiles for the builder and tester are located
+  [here](resource/docker/rust-builder-linux-armv7/Dockerfile) and
+  [here](resource/docker/rust-tester-linux-armv7/Dockerfile), respectively.
 
 ### Changed
-- The CircleCI job is now run inside a custom Docker image whose Dockerfile is contained within
-  this repository.
 - All artifacts are now built on the CI with the `--release` profile.
 
 ### Fixed
 - The integration and unit tests no longer look in only the `target/debug` directory for test
-  artifacts. Instead, they search first inside `target/release` and then fall back to
-  `target/debug` if the first folder does not exist. This bug was preventing the implementation of
-  a release workflow on the CI.
+  artifacts. Instead, they search for artifacts in the parent folder and subfolders of the
+  currently-running test binary.
+- Fixed a unit test that was not compiling on 32-bit Linux platforms due to a difference in integer
+  size as compared to 64-bit systems.
 
 ## [0.1.0] - 2019-12-14
 ### Added

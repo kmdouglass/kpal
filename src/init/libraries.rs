@@ -178,6 +178,7 @@ impl Error for LibraryInitError {
 mod tests {
     use super::*;
 
+    use std::env;
     use std::fs::File;
     use std::io::Error;
     use std::path::PathBuf;
@@ -265,20 +266,12 @@ mod tests {
     fn load_peripherals_loads_library_files() {
         set_up();
 
-        // Prefer using the release artifact for testing over debug
         let lib = {
-            let mut release = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            release.push("target/release/examples/libbasic-plugin.so");
-            let mut debug = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            debug.push("target/debug/examples/libbasic-plugin.so");
-
-            if release.exists() {
-                release
-            } else if debug.exists() {
-                debug
-            } else {
-                panic!("Cannot find library artifact for testing")
-            }
+            let mut dir = env::current_exe().expect("Could not determine current executable");
+            dir.pop(); // Drop executable name
+            dir.pop(); // Move up one directory from deps
+            dir.push("examples/libbasic-plugin.so");
+            dir
         };
 
         let mut libs: Vec<PathBuf> = Vec::new();

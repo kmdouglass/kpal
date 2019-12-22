@@ -1,8 +1,8 @@
 version: 2
 jobs:
-  build:
+  build-x86_64:
     docker:
-      - image: kmdouglass/rust-builder-linux-x86_64
+      - image: kmdouglass/rust-linux-x86_64
     steps:
       - checkout
       - restore_cache:
@@ -30,6 +30,57 @@ jobs:
           paths:
             - release/kpald
             - release/libkpal_gpio_cdev.so
+            - release/examples/libbasic-plugin.so
+      - save_cache:
+          key: v1-build-cache-{{ checksum "Cargo.lock" }}
+          paths:
+            - "~/.cargo"
+            - "./target"
+  build-armv7:
+    docker:
+      - image: kmdouglass/rust_cross_armv7-linux-x86_64
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-build-cache-{{ checksum "Cargo.lock" }}
+            - v1-build-cache-
+      - run:
+          name: Check codestyle
+          command: |
+            rustfmt --version
+            cargo fmt -- --check
+      - run:
+          name: Build all targets
+          command: |
+            rustc --version --verbose
+            cargo --version --verbose
+            cargo build --target=armv7-unknown-linux-gnueabihf --release --all --all-targets
+      - setup_remote_docker:
+
+      # Run the test binaries inside a ARMv7 Docker container. Each time a new test binary is
+      # created, we must append it to the list below.
+      - run:
+          name: Test all targets
+          command: |
+            docker run --rm --privileged multiarch/qemu-user-static:register
+            docker create -v /opt/kpal/target --name kpal-artifacts multiarch/alpine:armhf-v3.10 \
+                   /bin/true
+            docker cp target kpal-artifacts:/opt/kpal
+            docker run --rm --volumes-from kpal-artifacts kmdouglass/kpal_tester-linux-armv7 \
+                   -d "${ARTIFACTS_DIR}" \
+                   kpal kpal_gpio_cdev kpal_plugin integration_tests
+            docker run --rm --volumes-from kpal-artifacts kmdouglass/kpal_tester-linux-armv7 \
+                   -d "${ARTIFACTS_DIR}"/../examples \
+                   basic_plugin
+          environment:
+            ARTIFACTS_DIR: /opt/kpal/target/armv7-unknown-linux-gnueabihf/release/deps
+      - persist_to_workspace:
+          root: target
+          paths:
+            - armv7-unknown-linux-gnueabihf/release/kpald
+            - armv7-unknown-linux-gnueabihf/release/libkpal_gpio_cdev.so
+            - armv7-unknown-linux-gnueabihf/release/examples/libbasic-plugin.so
       - save_cache:
           key: v1-build-cache-{{ checksum "Cargo.lock" }}
           paths:
@@ -37,7 +88,7 @@ jobs:
             - "./target"
   publish-crates.io-dry-run:
     docker:
-      - image: kmdouglass/rust-builder-linux-x86_64
+      - image: kmdouglass/rust-linux-x86_64
     steps:
       - checkout
       - restore_cache:
@@ -60,25 +111,43 @@ jobs:
       - attach_workspace:
           at: /tmp/target
       - run:
-          name: Package artifacts
+          name: Package x86_64 artifacts
           command: |
             pushd /tmp/target/release
-            tar -czvf kpal-linux-x86_64.tar.gz kpald libkpal_gpio_cdev.so
+            tar -czvf kpal-linux-x86_64.tar.gz \
+                kpald libkpal_gpio_cdev.so examples/libbasic-plugin.so
             popd
+      - run:
+          name: Package armv7 artifacts
+          command: |
+            pushd /tmp/target/armv7-unknown-linux-gnueabihf/release
+            tar -czvf kpal-linux-armv7.tar.gz \
+                kpald libkpal_gpio_cdev.so examples/libbasic-plugin.so
+            popd
+      - run:
+          name: Move artifacts to a common directory
+          command: |
+            mkdir /tmp/artifacts
+            mv /tmp/target/release/kpal-linux-x86_64.tar.gz \
+               /tmp/target/armv7-unknown-linux-gnueabihf/release/kpal-linux-armv7.tar.gz \
+               /tmp/artifacts
       - run:
           name: Publish artifacts on GitHub
           command: |
             ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} \
-                -c ${CIRCLE_SHA1} ${CIRCLE_TAG} /tmp/target/release/kpal-linux-x86_64.tar.gz
+                -c ${CIRCLE_SHA1} ${CIRCLE_TAG} /tmp/artifacts
   publish-crates.io:
     docker:
-      - image: kmdouglass/rust-builder-linux-x86_64
+      - image: kmdouglass/rust-linux-x86_64
     steps:
       - checkout
       - restore_cache:
           keys:
             - v1-build-cache-{{ checksum "Cargo.lock" }}
             - v1-build-cache-
+      - run:
+          name: Login to crates.io
+          command: cargo login ${CRATESIO_TOKEN}
       - run:
           name: Publish kpal-plugin
           command: |
@@ -99,19 +168,25 @@ workflows:
   version: 2
   main:
     jobs:
-      - build:
+      - build-x86_64:
+          filters:
+            tags:
+              only: /.*/
+      - build-armv7:
           filters:
             tags:
               only: /.*/
       - publish-crates.io-dry-run:
           requires:
-            - build
+            - build-x86_64
+            - build-armv7
           filters:
             tags:
               only: /.*/
       - publish-github-release:
           requires:
-            - build
+            - build-x86_64
+            - build-armv7
           filters:
             tags:
               only: /^\d+\.\d+\.\d+$/

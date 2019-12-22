@@ -375,9 +375,9 @@ mod tests {
 
     struct Context {
         attributes: Vec<Attribute>,
-        float_value: f64,
+        float_value: c_double,
         id: usize,
-        int_value: i64,
+        int_value: c_long,
         library_id: usize,
         name: String,
         peripheral: Peripheral,
