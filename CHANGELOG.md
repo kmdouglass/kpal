@@ -19,6 +19,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Raspberry Pi). The Dockerfiles for the builder and tester are located
   [here](resources/docker/rust_cross_armv7-linux-x86_64/Dockerfile) and
   [here](resources/docker/kpal_tester-linux-armv7/Dockerfile), respectively.
+- Added the Dependabot dependencey management service to the GitHub repo.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.

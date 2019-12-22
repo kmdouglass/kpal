@@ -1,0 +1,17 @@
+version: 1
+update_configs:
+  - package_manager: "rust:cargo"
+    directory: "/"
+    update_schedule: "daily"
+
+  - package_manager: "docker"
+    directory: "/resources/docker/rust-linux-x86_64"
+    update_schedule: "daily"
+
+  - package_manager: "docker"
+    directory: "/resources/docker/rust_cross_armv7-linux-x86_64"
+    update_schedule: "daily"
+
+  - package_manager: "docker"
+    directory: "/resources/docker/kpal_tester-linux-armv7"
+    update_schedule: "daily"
