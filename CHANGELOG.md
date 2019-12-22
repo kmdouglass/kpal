@@ -7,7 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased] - 2019-12-22
 ### Added
 - A Dockerfile was added at
-  [resource/docker/rust-builder-linux-x86_64/Dockerfile](resource/docker/rust-builder-linux-x86_64/Dockerfile)
+  [resources/docker/rust-linux-x86_64/Dockerfile](resources/docker/rust-linux-x86_64/Dockerfile)
   that defines the image in which the x86_64 CI jobs are run. The Docker file is automatically
   built and hosted on DockerHub.
 - A new workflow was added to the CI configuration for releases. The new workflow is called `main`
@@ -17,8 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A build cache was added to the CI that includes the `~/.cargo` and `target` folders.
 - A job was added to the CI to build artifacts for the ARMv7 architecture (the one used by the
   Raspberry Pi). The Dockerfiles for the builder and tester are located
-  [here](resource/docker/rust-builder-linux-armv7/Dockerfile) and
-  [here](resource/docker/rust-tester-linux-armv7/Dockerfile), respectively.
+  [here](resources/docker/rust_cross_armv7-linux-x86_64/Dockerfile) and
+  [here](resources/docker/kpal_tester-linux-armv7/Dockerfile), respectively.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.
