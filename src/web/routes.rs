@@ -19,11 +19,8 @@ use crate::web::handlers;
 /// * `request` - The object containing the information concerning the client's request
 /// * `libs` The set of libraries that is currently open by the daemon
 /// * `transmitters` The set of transmitters for sending messages into each peripheral thread
-pub fn routes(
-    request: &Request,
-    libs: &Vec<TSLibrary>,
-    txs: Arc<RwLock<Transmitters>>,
-) -> Response {
+#[allow(clippy::cognitive_complexity)]
+pub fn routes(request: &Request, libs: &[TSLibrary], txs: Arc<RwLock<Transmitters>>) -> Response {
     router!(request,
 
             (GET) (/) => {
@@ -49,7 +46,7 @@ pub fn routes(
 
             (POST) (/api/v0/peripherals) => {
                 log::info!("POST /api/v0/peripherals");
-                handlers::post_peripherals(&request, &libs, txs.clone()).unwrap_or_else(log_error)
+                handlers::post_peripherals(&request, libs, txs.clone()).unwrap_or_else(log_error)
             },
 
             (GET) (/api/v0/peripherals/{id: usize}) => {
@@ -69,7 +66,7 @@ pub fn routes(
 
             (PATCH) (/api/v0/peripherals/{id: usize}/attributes/{attr_id: usize}) => {
                 log::info!("PATCH /api/v0/peripherals/{}/attributes/{}", id, attr_id);
-                handlers::patch_peripheral_attribute(&request, id, attr_id, txs.clone()).unwrap_or_else(log_error)
+                handlers::patch_peripheral_attribute(&request, id, attr_id, txs).unwrap_or_else(log_error)
             },
 
             _ => Response::empty_404()

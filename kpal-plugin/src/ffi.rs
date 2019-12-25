@@ -46,13 +46,17 @@ pub extern "C" fn error_message(error_code: c_int) -> *const c_uchar {
 /// This function returns a status code that indicates whether the operation succeeded and the
 /// cause of any possible errors.
 ///
+/// # Safety
+///
+/// This function is unsafe because it dereferences a raw pointer.
+///
 /// # Arguments
 ///
 /// * `peripheral` - A pointer to a peripheral struct
 /// * `id` - The id of the attribute
 /// * `buffer` - A buffer of bytes into which the attribute's name will be written
 /// * `length` - The length of the buffer
-pub extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError>(
+pub unsafe extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError>(
     peripheral: *const Peripheral,
     id: size_t,
     buffer: *mut c_uchar,
@@ -63,16 +67,15 @@ pub extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError>(
         return NULL_PTR_ERR;
     }
     let peripheral = peripheral as *const T;
-    unsafe {
-        let name: &[u8] = match (*peripheral).attribute_name(id) {
-            Ok(name) => name.to_bytes_with_nul(),
-            Err(e) => return e.error_code(),
-        };
 
-        match copy_string(name, buffer, length) {
-            Ok(_) => PLUGIN_OK,
-            Err(_) => UNDEFINED_ERR,
-        }
+    let name: &[u8] = match (*peripheral).attribute_name(id) {
+        Ok(name) => name.to_bytes_with_nul(),
+        Err(e) => return e.error_code(),
+    };
+
+    match copy_string(name, buffer, length) {
+        Ok(_) => PLUGIN_OK,
+        Err(_) => UNDEFINED_ERR,
     }
 }
 
@@ -81,12 +84,16 @@ pub extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError>(
 /// This function returns a status code that indicates whether the operation succeeded and the
 /// cause of any possible errors.
 ///
+/// # Safety
+///
+/// This function is unsafe because it dereferences a raw pointer.
+///
 /// # Arguments
 ///
 /// * `peripheral` - A pointer to a peripheral struct
 /// * `id` - The id of the attribute
 /// * `value` - A pointer to a Value enum. The enum is provided by this function's caller.
-pub extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError>(
+pub unsafe extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError>(
     peripheral: *const Peripheral,
     id: size_t,
     value: *mut Value,
@@ -97,19 +104,17 @@ pub extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError>(
     }
     let peripheral = peripheral as *const T;
 
-    unsafe {
-        match (*peripheral).attribute_value(id) {
-            Ok(new_value) => {
-                log::debug!(
-                    "Response for the value of attribute {}: {:?}",
-                    id,
-                    new_value
-                );
-                *value = new_value
-            }
-            Err(e) => return e.error_code(),
-        };
-    }
+    match (*peripheral).attribute_value(id) {
+        Ok(new_value) => {
+            log::debug!(
+                "Response for the value of attribute {}: {:?}",
+                id,
+                new_value
+            );
+            *value = new_value
+        }
+        Err(e) => return e.error_code(),
+    };
 
     PLUGIN_OK
 }
@@ -119,13 +124,17 @@ pub extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError>(
 /// This function returns a status code that indicates whether the operation succeeded and the
 /// cause of any possible errors.
 ///
+/// # Safety
+///
+/// This function is unsafe because it dereferences a raw pointer.
+///
 /// # Arguments
 ///
 /// * `peripheral` - A pointer to a peripheral struct
 /// * `id` - The id of the attribute
 /// * `value` - A pointer to a Value enum. The enum is provided by this function's caller and will
 /// be copied.
-pub extern "C" fn set_attribute_value<T: PluginAPI<E>, E: PluginError>(
+pub unsafe extern "C" fn set_attribute_value<T: PluginAPI<E>, E: PluginError>(
     peripheral: *mut Peripheral,
     id: size_t,
     value: *const Value,
@@ -140,13 +149,11 @@ pub extern "C" fn set_attribute_value<T: PluginAPI<E>, E: PluginError>(
     }
     let peripheral = peripheral as *mut T;
 
-    unsafe {
-        match (*peripheral).attribute_set_value(id, &*value) {
-            Ok(_) => {
-                log::debug!("Set attribute {} to {:?}", id, *value);
-                PLUGIN_OK
-            }
-            Err(e) => e.error_code(),
+    match (*peripheral).attribute_set_value(id, &*value) {
+        Ok(_) => {
+            log::debug!("Set attribute {} to {:?}", id, *value);
+            PLUGIN_OK
         }
+        Err(e) => e.error_code(),
     }
 }

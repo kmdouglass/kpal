@@ -46,6 +46,7 @@ RUN apt-get update \
 
 # Setup Rust for cross-compilation for ARMv7
 RUN rustup component add rustfmt \
+ && rustup component add clippy \
  && rustup target add armv7-unknown-linux-gnueabihf \
  && mkdir ${HOME}/.cargo \
  && echo '[target.armv7-unknown-linux-gnueabihf]\n\

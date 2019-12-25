@@ -22,12 +22,14 @@ use crate::constants::*;
 pub fn attribute_name(plugin: &Plugin, id: size_t) -> Result<String, NameError> {
     let mut name = [0u8; ATTRIBUTE_NAME_BUFFER_LENGTH];
 
-    let result = (plugin.vtable.attribute_name)(
-        plugin.peripheral,
-        id,
-        &mut name[0] as *mut c_uchar,
-        ATTRIBUTE_NAME_BUFFER_LENGTH,
-    );
+    let result = unsafe {
+        (plugin.vtable.attribute_name)(
+            plugin.peripheral,
+            id,
+            &mut name[0] as *mut c_uchar,
+            ATTRIBUTE_NAME_BUFFER_LENGTH,
+        )
+    };
 
     if result == PLUGIN_OK {
         let name = match memchr(0, &name)
@@ -49,14 +51,14 @@ pub fn attribute_name(plugin: &Plugin, id: size_t) -> Result<String, NameError> 
         Ok(name)
     } else if result == ATTRIBUTE_DOES_NOT_EXIST {
         log::debug!("Attribute does not exist: {}", result);
-        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        let msg = unsafe { error_message(&plugin, result).unwrap_or_else(|_| String::from("")) };
         Err(NameError::DoesNotExist(msg))
     } else {
         log::error!(
             "Received error code while getting attribute name: {}",
             result
         );
-        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        let msg = unsafe { error_message(&plugin, result).unwrap_or_else(|_| String::from("")) };
         Err(NameError::Failure(msg))
     }
 }
@@ -69,21 +71,22 @@ pub fn attribute_name(plugin: &Plugin, id: size_t) -> Result<String, NameError> 
 /// * `id` - The attribute's unique ID
 /// * `value` - A reference to a value instance into which the attribute's value will be copied
 pub fn attribute_value(plugin: &Plugin, id: size_t, value: &mut Value) -> Result<(), ValueError> {
-    let result = (plugin.vtable.attribute_value)(plugin.peripheral, id, value as *mut Value);
+    let result =
+        unsafe { (plugin.vtable.attribute_value)(plugin.peripheral, id, value as *mut Value) };
 
     if result == PLUGIN_OK {
         log::debug!("Received value: {:?}", value);
         Ok(())
     } else if result == ATTRIBUTE_DOES_NOT_EXIST {
         log::debug!("Attribute does not exist: {}", result);
-        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        let msg = unsafe { error_message(&plugin, result).unwrap_or_else(|_| String::from("")) };
         Err(ValueError::DoesNotExist(msg))
     } else {
         log::error!(
             "Received error code while fetching attribute value: {}",
             result
         );
-        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        let msg = unsafe { error_message(&plugin, result).unwrap_or_else(|_| String::from("")) };
         Err(ValueError::Failure(msg))
     }
 }
@@ -122,21 +125,23 @@ pub fn set_attribute_value(
     id: size_t,
     value: &Value,
 ) -> Result<(), SetValueError> {
-    let result = (plugin.vtable.set_attribute_value)(plugin.peripheral, id, value as *const Value);
+    let result = unsafe {
+        (plugin.vtable.set_attribute_value)(plugin.peripheral, id, value as *const Value)
+    };
 
     if result == PLUGIN_OK {
         log::debug!("Set value: {:?}", value);
         Ok(())
     } else if result == ATTRIBUTE_DOES_NOT_EXIST {
         log::debug!("Attribute does not exist: {}", result);
-        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        let msg = unsafe { error_message(&plugin, result).unwrap_or_else(|_| String::from("")) };
         Err(SetValueError::DoesNotExist(msg))
     } else {
         log::error!(
             "Received error code while setting attribute value: {}",
             result
         );
-        let msg = unsafe { error_message(&plugin, result).unwrap_or(String::from("")) };
+        let msg = unsafe { error_message(&plugin, result).unwrap_or_else(|_| String::from("")) };
         Err(SetValueError::Failure(msg))
     }
 }
@@ -189,6 +194,9 @@ mod tests {
 
     use crate::plugins::driver::{NameError, ValueError};
 
+    type AttributeName = extern "C" fn(*const Peripheral, size_t, *mut c_uchar, size_t) -> c_int;
+    type AttributeValue = extern "C" fn(*const Peripheral, size_t, *mut Value) -> c_int;
+
     #[test]
     fn test_error_message() {
         let plugin = set_up();
@@ -199,10 +207,7 @@ mod tests {
     #[test]
     fn test_attribute_name() {
         let mut plugin = set_up();
-        let cases: Vec<(
-            Result<String, NameError>,
-            extern "C" fn(*const Peripheral, size_t, *mut c_uchar, size_t) -> c_int,
-        )> = vec![
+        let cases: Vec<(Result<String, NameError>, AttributeName)> = vec![
             (Ok(String::from("")), attribute_name_ok),
             (
                 Err(NameError::DoesNotExist(String::from("foo"))),
@@ -227,10 +232,7 @@ mod tests {
     #[test]
     fn test_attribute_value() {
         let mut plugin = set_up();
-        let cases: Vec<(
-            Result<(), ValueError>,
-            extern "C" fn(*const Peripheral, size_t, *mut Value) -> c_int,
-        )> = vec![
+        let cases: Vec<(Result<(), ValueError>, AttributeValue)> = vec![
             (Ok(()), attribute_value_ok),
             (
                 Err(ValueError::DoesNotExist(String::from("foo"))),

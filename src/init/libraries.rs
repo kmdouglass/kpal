@@ -76,7 +76,7 @@ fn find_peripherals(dir: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
         }
     }
 
-    if peripherals.len() != 0 {
+    if !peripherals.is_empty() {
         Ok(Some(peripherals))
     } else {
         Ok(None)
@@ -97,7 +97,7 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
 
         let file_name = lib
             .file_name()
-            .unwrap_or(OsStr::new("Unknown"))
+            .unwrap_or_else(|| OsStr::new("Unknown"))
             .to_string_lossy()
             .into_owned();
 
@@ -137,7 +137,7 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
         log::info!("Initialization of {} succeeded.", path);
     }
 
-    if libraries.len() != 0 {
+    if !libraries.is_empty() {
         Some(libraries)
     } else {
         None

@@ -109,8 +109,8 @@ mod tests {
                 name: String::from("bar"),
                 value: 42,
             },
-            model_peripheral: model_peripheral,
-            plugin: plugin,
+            model_peripheral,
+            plugin,
         }
     }
 
@@ -137,7 +137,7 @@ mod tests {
             unsafe {
                 let string: &[u8] = b"bar\0";
                 let buffer = std::slice::from_raw_parts_mut(buffer, ATTRIBUTE_NAME_BUFFER_LENGTH);
-                &buffer[0..4].copy_from_slice(string);
+                buffer[0..4].copy_from_slice(string);
             };
             PLUGIN_OK
         } else {

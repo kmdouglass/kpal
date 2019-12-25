@@ -92,7 +92,7 @@ pub struct VTable {
     pub error_message: extern "C" fn(c_int) -> *const c_uchar,
 
     /// Writes the name of an attribute to a buffer that is provided by the caller.
-    pub attribute_name: extern "C" fn(
+    pub attribute_name: unsafe extern "C" fn(
         peripheral: *const Peripheral,
         id: size_t,
         buffer: *mut c_uchar,
@@ -101,15 +101,15 @@ pub struct VTable {
 
     /// Writes the value of an attribute to a Value instance that is provided by the caller.
     pub attribute_value:
-        extern "C" fn(peripheral: *const Peripheral, id: size_t, value: *mut Value) -> c_int,
+        unsafe extern "C" fn(peripheral: *const Peripheral, id: size_t, value: *mut Value) -> c_int,
 
     /// Sets the value of an attribute.
     pub set_attribute_value:
-        extern "C" fn(peripheral: *mut Peripheral, id: size_t, value: *const Value) -> c_int,
+        unsafe extern "C" fn(peripheral: *mut Peripheral, id: size_t, value: *const Value) -> c_int,
 }
 
 /// The type signature of the function that returns a new plugin instance.
-pub type KpalPluginInit = extern "C" fn(*mut Plugin) -> c_int;
+pub type KpalPluginInit = unsafe extern "C" fn(*mut Plugin) -> c_int;
 
 /// A single piece of information that partly determines the state of a peripheral.
 #[derive(Debug)]

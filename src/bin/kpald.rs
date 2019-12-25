@@ -29,8 +29,6 @@ fn main() {
     rouille::start_server(&args.server_addr, move |request| {
         let transmitters = transmitters.clone();
 
-        let response = routes(&request, &libraries, transmitters);
-
-        response
+        routes(&request, &libraries, transmitters)
     });
 }

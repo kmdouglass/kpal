@@ -159,8 +159,13 @@ pub extern "C" fn kpal_library_init() -> c_int {
 /// The plugin is used by the daemon to communicate with the peripheral. It contains an opaque
 /// pointer to the peripheral and a vtable. The vtable is a struct of function pointers to the
 /// remaining functions in the plugin API.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences a null pointer and assigns data to a variable
+/// of the type `MaybeUnit`.
 #[no_mangle]
-pub extern "C" fn kpal_plugin_init(plugin: *mut Plugin) -> c_int {
+pub unsafe extern "C" fn kpal_plugin_init(plugin: *mut Plugin) -> c_int {
     let plugin_data = match Basic::new() {
         Ok(plugin_data) => plugin_data,
         Err(e) => {
@@ -172,19 +177,17 @@ pub extern "C" fn kpal_plugin_init(plugin: *mut Plugin) -> c_int {
     let plugin_data = Box::into_raw(plugin_data) as *mut Peripheral;
 
     let vtable = VTable {
-        peripheral_free: peripheral_free,
-        error_message: error_message,
+        peripheral_free,
+        error_message,
         attribute_name: attribute_name::<Basic, BasicError>,
         attribute_value: attribute_value::<Basic, BasicError>,
         set_attribute_value: set_attribute_value::<Basic, BasicError>,
     };
 
-    unsafe {
-        plugin.write(Plugin {
-            peripheral: plugin_data,
-            vtable: vtable,
-        });
-    }
+    plugin.write(Plugin {
+        peripheral: plugin_data,
+        vtable,
+    });
 
     log::debug!("Initialized plugin: {:?}", plugin);
     PLUGIN_OK

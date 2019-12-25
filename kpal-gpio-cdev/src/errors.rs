@@ -43,7 +43,7 @@ impl From<gpio_cdev::errors::Error> for GPIOPluginError {
         };
 
         GPIOPluginError {
-            error_code: error_code,
+            error_code,
             side: Some(Box::new(error)),
         }
     }

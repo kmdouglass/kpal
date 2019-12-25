@@ -10,19 +10,24 @@ jobs:
             - v1-build-cache-{{ checksum "Cargo.lock" }}
             - v1-build-cache-
       - run:
-          name: Check codestyle
+          name: Check code formatting
           command: |
             rustfmt --version
             cargo fmt -- --check
+      - run:
+          name: Lint code
+          command: |
+            clippy-driver --version
+            cargo clippy --workspace --all-targets -- -D warnings
       - run:
           name: Build all targets
           command: |
             rustc --version --verbose
             cargo --version --verbose
-            cargo build --release --all --all-targets
+            cargo build --release --workspace --all-targets
       - run:
           name: Test all targets
-          command: cargo test --release --all --all-targets
+          command: cargo test --release --workspace --all-targets
           environment:
             SERVER_ADDRESS: 0.0.0.0:8080
       - persist_to_workspace:
@@ -46,16 +51,21 @@ jobs:
             - v1-build-cache-{{ checksum "Cargo.lock" }}
             - v1-build-cache-
       - run:
-          name: Check codestyle
+          name: Check code formatting
           command: |
             rustfmt --version
             cargo fmt -- --check
+      - run:
+          name: Lint code
+          command: |
+            clippy-driver --version
+            cargo clippy --workspace --all-targets -- -D warnings
       - run:
           name: Build all targets
           command: |
             rustc --version --verbose
             cargo --version --verbose
-            cargo build --target=armv7-unknown-linux-gnueabihf --release --all --all-targets
+            cargo build --target=armv7-unknown-linux-gnueabihf --release --workspace --all-targets
       - setup_remote_docker:
 
       # Run the test binaries inside a ARMv7 Docker container. Each time a new test binary is
