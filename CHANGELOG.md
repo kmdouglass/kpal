@@ -32,6 +32,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   currently-running test binary.
 - Fixed a unit test that was not compiling on 32-bit Linux platforms due to a difference in integer
   size as compared to 64-bit systems.
+- The description of kpald in the --help text now matches the one on GitHub and in Cargo.toml.
 
 ## [0.1.0] - 2019-12-14
 ### Added

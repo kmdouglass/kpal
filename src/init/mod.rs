@@ -31,7 +31,7 @@ lazy_static! {
 #[derive(StructOpt)]
 #[structopt(
     name = "kpald",
-    about = "A general-purpose control system for physical computing"
+    about = "An extensible and RESTful control system for physical computing"
 )]
 pub struct Cli {
     #[structopt(short = "s", long = "server-address", default_value = "0.0.0.0:8000")]
@@ -40,7 +40,7 @@ pub struct Cli {
     #[structopt(
         short = "l",
         long = "library-dir",
-        raw(default_value = "&DEFAULT_LIBRARY_DIR"),
+        default_value = &DEFAULT_LIBRARY_DIR,
         parse(from_os_str)
     )]
     pub library_dir: PathBuf,
