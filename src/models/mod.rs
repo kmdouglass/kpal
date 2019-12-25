@@ -298,7 +298,7 @@ mod tests {
         let context = set_up();
         let library = Library {
             id: context.id,
-            name: context.name.clone(),
+            name: context.name,
             library: None,
         };
 

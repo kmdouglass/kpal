@@ -5,9 +5,7 @@
 //! thread. All communication with a peripheral occurs through tasks that are executed by the
 //! executor.
 
-mod driver;
 mod executor;
-mod init;
 pub mod messaging;
 
 use std::error::Error;
@@ -37,11 +35,10 @@ pub fn init(
     lib: TSLibrary,
     txs: Arc<RwLock<Transmitters>>,
 ) -> std::result::Result<(), PluginInitError> {
-    let plugin: Plugin = unsafe { kpal_plugin_init(lib.clone())? };
+    let plugin: Plugin = unsafe { kpal_plugin_init(lib)? };
 
-    init::attributes(peripheral, &plugin);
-
-    let executor = Executor::new(plugin, peripheral.clone(), lib);
+    let mut executor = Executor::new(plugin, peripheral.clone());
+    executor.init_attributes();
 
     let tx = Mutex::new(executor.tx.clone());
     txs.write()
