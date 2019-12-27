@@ -1,16 +1,12 @@
 //! Messages and handlers for communications between peripheral threads and web server requests.
 
-use std::error::Error;
-use std::fmt;
-use std::fmt::Debug;
-use std::sync::mpsc::Receiver as Recv;
-use std::sync::mpsc::Sender;
+use std::{error::Error, fmt, fmt::Debug, sync::mpsc::Receiver as Recv, sync::mpsc::Sender};
 
 use kpal_plugin::Value;
 use log;
 
-use super::driver::{attribute_value, set_attribute_value, NameError, SetValueError, ValueError};
-use super::{Executor, Plugin};
+use super::executor::{NameError, SetValueError, ValueError};
+use super::Executor;
 
 use crate::models::Model;
 use crate::models::{Attribute, Peripheral};
@@ -43,7 +39,7 @@ impl Message {
             }
 
             Message::GetPeripheralAttribute(id, tx) => {
-                let result = attribute_value_wrapper(&mut ex.peripheral, &ex.plugin, *id);
+                let result = attribute_value_wrapper(ex, *id);
 
                 log_and_send(tx.clone(), result, ex.peripheral.id());
             }
@@ -60,7 +56,7 @@ impl Message {
 
                 let mut attrs = Vec::new();
                 for id in &ids {
-                    let result = attribute_value_wrapper(&mut ex.peripheral, &ex.plugin, *id);
+                    let result = attribute_value_wrapper(ex, *id);
                     attrs.push(result);
                 }
 
@@ -68,8 +64,7 @@ impl Message {
             }
 
             Message::PatchPeripheralAttribute(id, value, tx) => {
-                let result =
-                    set_attribute_value_wrapper(&mut ex.peripheral, &ex.plugin, *id, value);
+                let result = set_attribute_value_wrapper(ex, *id, value);
 
                 log_and_send(tx.clone(), result, ex.peripheral.id());
             }
@@ -77,31 +72,27 @@ impl Message {
     }
 }
 
-/// Wraps the driver's attribute_value function.
+/// Wraps the executor's attribute_value function.
 ///
 /// This function is provided for ergonomics. It keeps the `handle()` function DRY and easier to
 /// read.
 ///
 /// # Arguments
 ///
-/// * `peripheral` - The peripheral will be updated after the value is successfully obtained
-/// * `plugin` - The attribute is fetched using the API call provided by this plugin instance
+/// * `executor` - A reference to the current executor instance
 /// * `id` - The id of the attribute to fetch
-fn attribute_value_wrapper(
-    peripheral: &mut Peripheral,
-    plugin: &Plugin,
-    id: usize,
-) -> Result<Attribute, PluginError> {
+fn attribute_value_wrapper(executor: &mut Executor, id: usize) -> Result<Attribute, PluginError> {
     let mut value = Value::Int(0);
-    attribute_value(plugin, id, &mut value)
+    executor
+        .attribute_value(id, &mut value)
         .map(|_| {
             log::debug!(
                 "Retrieved value {:?} from peripheral {}",
                 value,
-                peripheral.id(),
+                executor.peripheral.id(),
             );
-            peripheral.set_attribute_from_value(id, value);
-            let attr = &peripheral.attributes()[id];
+            executor.peripheral.set_attribute_from_value(id, value);
+            let attr = &executor.peripheral.attributes()[id];
             attr.clone()
         })
         .map_err(|e| {
@@ -117,21 +108,26 @@ fn attribute_value_wrapper(
 ///
 /// # Arguments
 ///
-/// * `peripheral` - The peripheral will be updated after the value is successfully obtained
-/// * `plugin` - The attribute is fetched using the API call provided by this plugin instance
+/// * `executor` - A reference to the current executor instance
 /// * `id` - The id of the attribute to fetch
 /// * `value` - The value to set on the attribute
 fn set_attribute_value_wrapper(
-    peripheral: &mut Peripheral,
-    plugin: &Plugin,
+    executor: &mut Executor,
     id: usize,
     value: &Value,
 ) -> Result<Attribute, PluginError> {
-    set_attribute_value(plugin, id, value)
+    executor
+        .set_attribute_value(id, value)
         .map(|_| {
-            log::debug!("Set value {:?} on peripheral {}", value, peripheral.id(),);
-            peripheral.set_attribute_from_value(id, value.clone());
-            let attr = &peripheral.attributes()[id];
+            log::debug!(
+                "Set value {:?} on peripheral {}",
+                value,
+                executor.peripheral.id(),
+            );
+            executor
+                .peripheral
+                .set_attribute_from_value(id, value.clone());
+            let attr = &executor.peripheral.attributes()[id];
             attr.clone()
         })
         .map_err(|e| {
