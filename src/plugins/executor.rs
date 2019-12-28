@@ -1,4 +1,6 @@
-use std::{error::Error, ffi::CStr, fmt, sync::mpsc::channel, thread};
+//! Executors handle all communication with plugins.
+
+use std::{ffi::CStr, sync::mpsc::channel, thread};
 
 use {
     libc::{c_char, c_int, c_uchar, size_t},
@@ -8,8 +10,11 @@ use {
 
 use kpal_plugin::{constants::*, Value};
 
-use super::messaging::{Receiver, Transmitter};
-use super::Plugin;
+use super::{
+    errors::{ExecutorError, NameError, PluginError, SetValueError, ValueError},
+    messaging::{Receiver, Transmitter},
+    Plugin,
+};
 
 use crate::{
     constants::*,
@@ -66,7 +71,7 @@ impl Executor {
     /// - `executor` - An Executor instance. This will be consumed by the function and cannot be
     /// used again after this function is called.
     pub fn run(mut self) {
-        thread::spawn(move || -> Result<(), ExecutorRuntimeError> {
+        thread::spawn(move || -> Result<(), ExecutorError> {
             log::info!("Spawning new thread for plugin: {:?}", self.plugin);
 
             loop {
@@ -74,7 +79,7 @@ impl Executor {
                     "Checking for messages for peripheral: {}",
                     self.peripheral.id()
                 );
-                let msg = self.rx.recv().map_err(|_| ExecutorRuntimeError {})?;
+                let msg = self.rx.recv().map_err(|_| ExecutorError {})?;
                 msg.handle(&mut self);
             }
         });
@@ -216,12 +221,15 @@ impl Executor {
     ///
     /// # Arguments
     ///
-    /// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
-    unsafe fn error_message(&self, error_code: c_int) -> Result<String, KpalErrorMsg> {
+    /// * `error_code` - The integer code for which the corresponding message will be retrieved.
+    unsafe fn error_message(&self, error_code: c_int) -> Result<String, PluginError> {
         let msg_p = (self.plugin.vtable.error_message)(error_code) as *const c_char;
 
         let msg = if msg_p.is_null() {
-            return Err(KpalErrorMsg {});
+            return Err(PluginError {
+                body: "An unrecognized error code was provided to the plugin".to_string(),
+                http_status_code: 500,
+            });
         } else {
             CStr::from_ptr(msg_p).to_str()?.to_owned()
         };
@@ -269,59 +277,6 @@ impl Executor {
 
         self.peripheral.set_attributes(attr);
         self.peripheral.set_attribute_links();
-    }
-}
-
-/// Represents the state of a result obtained by fetching a name from an attribute.
-#[derive(Debug, PartialEq)]
-pub enum NameError {
-    DoesNotExist(String),
-    Failure(String),
-}
-
-/// Represents the state of a result obtained by fetching a value from an attribute.
-#[derive(Debug, PartialEq)]
-pub enum ValueError {
-    DoesNotExist(String),
-    Failure(String),
-}
-
-/// Represents the state of a result obtained by setting a value of an attribute.
-#[derive(Debug, PartialEq)]
-pub enum SetValueError {
-    DoesNotExist(String),
-    Failure(String),
-}
-
-/// An error returned by a failed Executor thread.
-#[derive(Debug)]
-pub struct ExecutorRuntimeError {}
-
-impl Error for ExecutorRuntimeError {
-    fn description(&self) -> &str {
-        "The executor thread failed"
-    }
-}
-
-impl fmt::Display for ExecutorRuntimeError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "The executor thread failed")
-    }
-}
-
-/// Represents a failure to recover an error message from the peripheral.
-#[derive(Debug)]
-struct KpalErrorMsg {}
-
-impl fmt::Display for KpalErrorMsg {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Error retrieving error message from the peripheral")
-    }
-}
-
-impl From<std::str::Utf8Error> for KpalErrorMsg {
-    fn from(_: std::str::Utf8Error) -> Self {
-        KpalErrorMsg {}
     }
 }
 

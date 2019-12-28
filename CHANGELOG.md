@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2019-12-27
+## [Unreleased] - 2019-12-29
 ### Added
 - A Dockerfile was added at
   [resources/docker/rust-linux-x86_64/Dockerfile](resources/docker/rust-linux-x86_64/Dockerfile)
@@ -27,6 +27,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The entire KPAL codebase is now linted with `clippy`.
 - The `plugins::driver` and ``plugins::init` modules were moved into methods of the Executor struct
   that is provided by the `plugins::executor` module.
+- All errors in the `plugins` module were consolidated and moved into a `plugins::errors`
+  submodule. Likewise, all errors in the `web` module were consolidated and moved into a
+  `web::errors` submodule.
 
 ### Fixed
 - The integration and unit tests no longer look in only the `target/debug` directory for test
