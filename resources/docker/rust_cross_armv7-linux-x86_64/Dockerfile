@@ -32,6 +32,7 @@ RUN ./Configure linux-generic32 \
 
 FROM base as kpal_builder
 
+ENV HOME=/root
 ENV OPEN_SSL_INSTALL_DIR=/opt/openssl
 ENV ARMV7_UNKNOWN_LINUX_GNUEABIHF_OPENSSL_LIB_DIR=${OPEN_SSL_INSTALL_DIR}/lib
 ENV ARMV7_UNKNOWN_LINUX_GNUEABIHF_OPENSSL_INCLUDE_DIR=${OPEN_SSL_INSTALL_DIR}/include
@@ -48,6 +49,6 @@ RUN apt-get update \
 RUN rustup component add rustfmt \
  && rustup component add clippy \
  && rustup target add armv7-unknown-linux-gnueabihf \
- && mkdir ${HOME}/.cargo \
- && echo '[target.armv7-unknown-linux-gnueabihf]\n\
-linker = "arm-linux-gnueabihf-gcc"\n' >> ${HOME}/.cargo/config
+ && mkdir "${HOME}"/.cargo \
+ && printf '[target.armv7-unknown-linux-gnueabihf]\nlinker = "arm-linux-gnueabihf-gcc"\n' \
+           >> "${HOME}"/.cargo/config

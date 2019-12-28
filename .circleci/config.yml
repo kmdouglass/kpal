@@ -1,8 +1,37 @@
-version: 2
-jobs:
-  build-x86_64:
-    docker:
-      - image: kmdouglass/rust-linux-x86_64
+version: 2.1
+
+###################################################################################################
+
+orbs:
+  docker: circleci/docker@0.5.20
+
+###################################################################################################
+
+commands:
+  docker-halt-if-no-changes:
+    description: Halt a job if there are no changes in the build context of an image
+    parameters:
+      path:
+        type: string
+        default: "/"
+      stable-branch:
+        type: string
+        default: "master"
+    steps:
+      - run:
+          name: Halt job if Dockerfile and contents have not changed
+          command: |
+            output=$(git diff origin/<< parameters.stable-branch >> << parameters.path >>)
+            if [ -z "${output}" ]; then
+                circleci-agent step halt
+            fi
+
+  setup-and-build:
+    description: Setup the environment and build KPAL
+    parameters:
+      target:
+        type: string
+        default: ""
     steps:
       - checkout
       - restore_cache:
@@ -24,7 +53,115 @@ jobs:
           command: |
             rustc --version --verbose
             cargo --version --verbose
-            cargo build --release --workspace --all-targets
+            cargo build --release --workspace --all-targets << parameters.target >>
+
+  save-build-cache:
+    description: Save the build cache
+    steps:
+      - save_cache:
+          key: v1-build-cache-{{ checksum "Cargo.lock" }}
+          paths:
+            - "~/.cargo"
+            - "./target"
+
+###################################################################################################
+
+workflows:
+  version: 2
+  build-kpal:
+    jobs:
+      - build-x86_64:
+          filters:
+            tags:
+              only: /.*/
+      - build-armv7:
+          filters:
+            tags:
+              only: /.*/
+      - publish-crates-io-dry-run:
+          requires:
+            - build-x86_64
+            - build-armv7
+          filters:
+            tags:
+              only: /.*/
+      - publish-github-release:
+          requires:
+            - build-x86_64
+            - build-armv7
+          filters:
+            tags:
+              only: /^\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/
+      - wait-for-approval:
+          type: approval
+          requires:
+            - publish-crates-io-dry-run
+            - publish-github-release
+          filters:
+            tags:
+              only: /^\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/
+      - publish-crates-io:
+          requires:
+            - wait-for-approval
+          filters:
+            tags:
+              only: /^\d+\.\d+\.\d+$/
+            branches:
+              ignore: /.*/
+
+  build-images:
+    jobs:
+      # rust-linux-x86_64
+      - docker/publish:
+          image: $CIRCLE_PROJECT_USERNAME/rust-linux-x86_64
+          path: resources/docker/rust-linux-x86_64
+          lint-dockerfile: true
+          before_build:
+            - docker-halt-if-no-changes:
+                path: resources/docker/rust-linux-x86_64
+          filters:
+            branches:
+              ignore: master
+
+      # rust_cross-armv7-linux-x86_64
+      - docker/publish:
+          image: $CIRCLE_PROJECT_USERNAME/rust_cross_armv7-linux-x86_64
+          path: resources/docker/rust_cross_armv7-linux-x86_64
+          lint-dockerfile: true
+          before_build:
+            - docker-halt-if-no-changes:
+                path: resources/docker/rust_cross_armv7-linux-x86_64
+          filters:
+            branches:
+              ignore: master
+
+      # kpal_tester-linux-armv7
+      - docker/publish:
+          image: $CIRCLE_PROJECT_USERNAME/kpal_tester-linux-armv7
+          path: resources/docker/kpal_tester-linux-armv7
+          lint-dockerfile: true
+          before_build:
+            - docker-halt-if-no-changes:
+                path: resources/docker/kpal_tester-linux-armv7
+            - run:
+                name: Register the QEMU multiarch container with the build agent
+                command: docker run --rm --privileged multiarch/qemu-user-static:register
+          filters:
+            branches:
+              ignore: master
+
+###################################################################################################
+
+jobs:
+  build-x86_64:
+    docker:
+      - image: kmdouglass/rust-linux-x86_64
+    steps:
+      - setup-and-build
       - run:
           name: Test all targets
           command: cargo test --release --workspace --all-targets
@@ -36,38 +173,15 @@ jobs:
             - release/kpald
             - release/libkpal_gpio_cdev.so
             - release/examples/libbasic-plugin.so
-      - save_cache:
-          key: v1-build-cache-{{ checksum "Cargo.lock" }}
-          paths:
-            - "~/.cargo"
-            - "./target"
+      - save-build-cache
+
   build-armv7:
     docker:
       - image: kmdouglass/rust_cross_armv7-linux-x86_64
     steps:
-      - checkout
-      - restore_cache:
-          keys:
-            - v1-build-cache-{{ checksum "Cargo.lock" }}
-            - v1-build-cache-
-      - run:
-          name: Check code formatting
-          command: |
-            rustfmt --version
-            cargo fmt -- --check
-      - run:
-          name: Lint code
-          command: |
-            clippy-driver --version
-            cargo clippy --workspace --all-targets -- -D warnings
-      - run:
-          name: Build all targets
-          command: |
-            rustc --version --verbose
-            cargo --version --verbose
-            cargo build --target=armv7-unknown-linux-gnueabihf --release --workspace --all-targets
-      - setup_remote_docker:
-
+      - setup-and-build:
+          target: --target=armv7-unknown-linux-gnueabihf
+      - setup_remote_docker
       # Run the test binaries inside a ARMv7 Docker container. Each time a new test binary is
       # created, we must append it to the list below.
       - run:
@@ -91,12 +205,9 @@ jobs:
             - armv7-unknown-linux-gnueabihf/release/kpald
             - armv7-unknown-linux-gnueabihf/release/libkpal_gpio_cdev.so
             - armv7-unknown-linux-gnueabihf/release/examples/libbasic-plugin.so
-      - save_cache:
-          key: v1-build-cache-{{ checksum "Cargo.lock" }}
-          paths:
-            - "~/.cargo"
-            - "./target"
-  publish-crates.io-dry-run:
+      - save-build-cache
+
+  publish-crates-io-dry-run:
     docker:
       - image: kmdouglass/rust-linux-x86_64
     steps:
@@ -114,6 +225,7 @@ jobs:
             pushd kpal-plugin
             cargo publish --dry-run
             popd
+
   publish-github-release:
     docker:
       - image: cibuilds/github
@@ -146,7 +258,8 @@ jobs:
           command: |
             ghr -t ${GITHUB_TOKEN} -u ${CIRCLE_PROJECT_USERNAME} -r ${CIRCLE_PROJECT_REPONAME} \
                 -c ${CIRCLE_SHA1} ${CIRCLE_TAG} /tmp/artifacts
-  publish-crates.io:
+
+  publish-crates-io:
     docker:
       - image: kmdouglass/rust-linux-x86_64
     steps:
@@ -173,50 +286,4 @@ jobs:
             pushd kpal-gpio-cdev
             cargo publish
             popd
-
-workflows:
-  version: 2
-  main:
-    jobs:
-      - build-x86_64:
-          filters:
-            tags:
-              only: /.*/
-      - build-armv7:
-          filters:
-            tags:
-              only: /.*/
-      - publish-crates.io-dry-run:
-          requires:
-            - build-x86_64
-            - build-armv7
-          filters:
-            tags:
-              only: /.*/
-      - publish-github-release:
-          requires:
-            - build-x86_64
-            - build-armv7
-          filters:
-            tags:
-              only: /^\d+\.\d+\.\d+$/
-            branches:
-              ignore: /.*/
-      - wait-for-approval:
-          type: approval
-          requires:
-            - publish-crates.io-dry-run
-            - publish-github-release
-          filters:
-            tags:
-              only: /^\d+\.\d+\.\d+$/
-            branches:
-              ignore: /.*/
-      - publish-crates.io:
-          requires:
-            - wait-for-approval
-          filters:
-            tags:
-              only: /^\d+\.\d+\.\d+$/
-            branches:
-              ignore: /.*/
+    

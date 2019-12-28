@@ -8,8 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - A Dockerfile was added at
   [resources/docker/rust-linux-x86_64/Dockerfile](resources/docker/rust-linux-x86_64/Dockerfile)
-  that defines the image in which the x86_64 CI jobs are run. The Docker file is automatically
-  built and hosted on DockerHub.
+  that defines the image in which the x86_64 CI jobs are run.
 - A new workflow was added to the CI configuration for releases. The new workflow is called `main`
   and has two pathways. One is triggered by a commit and one by pushing a tag to the Git repo. The
   pathway that is triggered by a commit contains a subset of the jobs contained by the one that is
@@ -21,6 +20,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [here](resources/docker/kpal_tester-linux-armv7/Dockerfile), respectively.
 - Added the Dependabot dependencey management service to the GitHub repo.
 - Added steps to the CI to check that the code has been linted with `cargo clippy`.
+- A new workflow was added to the CI to build and publish Dockerfiles to Docker Hub.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.
