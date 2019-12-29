@@ -25,7 +25,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.
 - The entire KPAL codebase is now linted with `clippy`.
-- The `plugins::driver` and ``plugins::init` modules were moved into methods of the Executor struct
+- The `plugins::driver` and `plugins::init` modules were moved into methods of the Executor struct
   that is provided by the `plugins::executor` module.
 - All errors in the `plugins` module were consolidated and moved into a `plugins::errors`
   submodule. Likewise, all errors in the `web` module were consolidated and moved into a
