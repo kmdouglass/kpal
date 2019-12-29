@@ -1,12 +1,11 @@
 //! Messages and handlers for communications between peripheral threads and web server requests.
 
-use std::{error::Error, fmt, fmt::Debug, sync::mpsc::Receiver as Recv, sync::mpsc::Sender};
+use std::{fmt::Debug, sync::mpsc::Receiver as Recv, sync::mpsc::Sender};
 
 use kpal_plugin::Value;
 use log;
 
-use super::executor::{NameError, SetValueError, ValueError};
-use super::Executor;
+use super::{Executor, PluginError};
 
 use crate::models::Model;
 use crate::models::{Attribute, Peripheral};
@@ -160,73 +159,4 @@ fn log_and_send<T: Debug>(
             peripheral_id
         );
     };
-}
-
-/// Contains information for clients about errors that occur while communicating with a plugin.
-///
-/// This error type is intended for the exclusive use by server request handlers. After an
-/// operation is performed on a plugin, the result may be an error of one of many different
-/// types. These errors should be converted into a PluginError. A PluginError contains the
-/// information that is necessary for the server's request handler to report information back to
-/// the client about why the requested operation failed.
-#[derive(Debug)]
-pub struct PluginError {
-    /// The body of the HTTP response to return to the client.
-    pub body: String,
-
-    /// The HTTP status code that should be returned to the client.
-    pub http_status_code: u16,
-}
-
-impl Error for PluginError {}
-
-impl fmt::Display for PluginError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PluginError: {:?}", self)
-    }
-}
-
-impl From<NameError> for PluginError {
-    fn from(error: NameError) -> Self {
-        match error {
-            NameError::DoesNotExist(msg) => PluginError {
-                body: msg,
-                http_status_code: 404,
-            },
-            NameError::Failure(msg) => PluginError {
-                body: msg,
-                http_status_code: 500,
-            },
-        }
-    }
-}
-
-impl From<ValueError> for PluginError {
-    fn from(error: ValueError) -> Self {
-        match error {
-            ValueError::DoesNotExist(msg) => PluginError {
-                body: msg,
-                http_status_code: 404,
-            },
-            ValueError::Failure(msg) => PluginError {
-                body: msg,
-                http_status_code: 500,
-            },
-        }
-    }
-}
-
-impl From<SetValueError> for PluginError {
-    fn from(error: SetValueError) -> Self {
-        match error {
-            SetValueError::DoesNotExist(msg) => PluginError {
-                body: msg,
-                http_status_code: 404,
-            },
-            SetValueError::Failure(msg) => PluginError {
-                body: msg,
-                http_status_code: 500,
-            },
-        }
-    }
 }
