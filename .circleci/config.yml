@@ -70,14 +70,63 @@ workflows:
   version: 2
   build-kpal:
     jobs:
+      - docker/publish:
+          name: Build rust-linux-x86_64 image
+          image: $CIRCLE_PROJECT_USERNAME/rust-linux-x86_64
+          path: resources/docker/rust-linux-x86_64
+          tag: $CIRCLE_SHA1,latest
+          lint-dockerfile: true
+          before_build:
+            - docker-halt-if-no-changes:
+                path: resources/docker/rust-linux-x86_64
+          filters:
+            tags:
+              only: /.*/
+
+      - docker/publish:
+          name: Build rust_cross-armv7-linux-x86_64 image
+          image: $CIRCLE_PROJECT_USERNAME/rust_cross_armv7-linux-x86_64
+          path: resources/docker/rust_cross_armv7-linux-x86_64
+          tag: $CIRCLE_SHA1,latest
+          lint-dockerfile: true
+          before_build:
+            - docker-halt-if-no-changes:
+                path: resources/docker/rust_cross_armv7-linux-x86_64
+          filters:
+            tags:
+              only: /.*/
+
+      - docker/publish:
+          name: Build kpal_tester-linux-armv7 image
+          image: $CIRCLE_PROJECT_USERNAME/kpal_tester-linux-armv7
+          path: resources/docker/kpal_tester-linux-armv7
+          tag: $CIRCLE_SHA1,latest
+          lint-dockerfile: true
+          before_build:
+            - docker-halt-if-no-changes:
+                path: resources/docker/kpal_tester-linux-armv7
+            - run:
+                name: Register the QEMU multiarch container with the build agent
+                command: docker run --rm --privileged multiarch/qemu-user-static:register
+          filters:
+            tags:
+              only: /.*/
+              
       - build-x86_64:
+          requires:
+            - Build rust-linux-x86_64 image
           filters:
             tags:
               only: /.*/
+
       - build-armv7:
+          requires:
+            - Build rust_cross-armv7-linux-x86_64 image
+            - Build kpal_tester-linux-armv7 image
           filters:
             tags:
               only: /.*/
+
       - publish-crates-io-dry-run:
           requires:
             - build-x86_64
@@ -85,6 +134,7 @@ workflows:
           filters:
             tags:
               only: /.*/
+
       - publish-github-release:
           requires:
             - build-x86_64
@@ -104,6 +154,7 @@ workflows:
               only: /^\d+\.\d+\.\d+$/
             branches:
               ignore: /.*/
+
       - publish-crates-io:
           requires:
             - wait-for-approval
@@ -112,47 +163,6 @@ workflows:
               only: /^\d+\.\d+\.\d+$/
             branches:
               ignore: /.*/
-
-  build-images:
-    jobs:
-      # rust-linux-x86_64
-      - docker/publish:
-          image: $CIRCLE_PROJECT_USERNAME/rust-linux-x86_64
-          path: resources/docker/rust-linux-x86_64
-          lint-dockerfile: true
-          before_build:
-            - docker-halt-if-no-changes:
-                path: resources/docker/rust-linux-x86_64
-          filters:
-            branches:
-              ignore: master
-
-      # rust_cross-armv7-linux-x86_64
-      - docker/publish:
-          image: $CIRCLE_PROJECT_USERNAME/rust_cross_armv7-linux-x86_64
-          path: resources/docker/rust_cross_armv7-linux-x86_64
-          lint-dockerfile: true
-          before_build:
-            - docker-halt-if-no-changes:
-                path: resources/docker/rust_cross_armv7-linux-x86_64
-          filters:
-            branches:
-              ignore: master
-
-      # kpal_tester-linux-armv7
-      - docker/publish:
-          image: $CIRCLE_PROJECT_USERNAME/kpal_tester-linux-armv7
-          path: resources/docker/kpal_tester-linux-armv7
-          lint-dockerfile: true
-          before_build:
-            - docker-halt-if-no-changes:
-                path: resources/docker/kpal_tester-linux-armv7
-            - run:
-                name: Register the QEMU multiarch container with the build agent
-                command: docker run --rm --privileged multiarch/qemu-user-static:register
-          filters:
-            branches:
-              ignore: master
 
 ###################################################################################################
 

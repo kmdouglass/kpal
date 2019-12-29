@@ -20,7 +20,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   [here](resources/docker/kpal_tester-linux-armv7/Dockerfile), respectively.
 - Added the Dependabot dependencey management service to the GitHub repo.
 - Added steps to the CI to check that the code has been linted with `cargo clippy`.
-- A new workflow was added to the CI to build and publish Dockerfiles to Docker Hub.
+- A new set of jobs was added to the CI to build and publish Dockerfiles to Docker Hub.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.
