@@ -23,6 +23,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A new set of jobs was added to the CI to build and publish Dockerfiles to Docker Hub.
 - `kpal-plugin` now exposes a `KpalLibraryInit` type that is used by the daemon to initialize
   plugin libraries. Previously, the function signature was hard-coded.
+- A new macro called `declare_plugin` was added to the `kpal-plugin` library. This macro takes care
+  of initializing the FFI code for plugins so that plugin authors do not have to.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.
@@ -32,6 +34,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - All errors in the `plugins` module were consolidated and moved into a `plugins::errors`
   submodule. Likewise, all errors in the `web` module were consolidated and moved into a
   `web::errors` submodule.
+- The `Peripheral` in the `kpal-plugin` crate was renamed to `PluginData` to avoid confusion with
+  the `Peripheral` of the user API and to emphasize that it holds the state of a plugin.
 
 ### Fixed
 - The integration and unit tests no longer look in only the `target/debug` directory for test

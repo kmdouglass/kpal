@@ -6,23 +6,23 @@ use std::ptr::null;
 use libc::{c_int, c_uchar, size_t};
 
 use crate::constants::*;
-use crate::{copy_string, Peripheral, PluginAPI, PluginError, Value, ERRORS};
+use crate::{copy_string, PluginAPI, PluginData, PluginError, Value, ERRORS};
 
-/// Frees the memory associated with the peripheral.
+/// Frees the memory associated with the plugin's data.
 ///
 /// This routine will be called automatically by the daemon and should not be called by any user
 /// code.
 ///
 /// # Arguments
 ///
-/// * `peripheral` - A pointer to a peripheral struct
-pub extern "C" fn peripheral_free(peripheral: *mut Peripheral) {
-    if peripheral.is_null() {
+/// * `plugin_data` - A pointer to a PluginData struct
+pub extern "C" fn plugin_free(plugin_data: *mut PluginData) {
+    if plugin_data.is_null() {
         return;
     }
-    let peripheral = peripheral as *mut Box<Peripheral>;
+    let plugin_data = plugin_data as *mut Box<PluginData>;
     unsafe {
-        Box::from_raw(peripheral);
+        Box::from_raw(plugin_data);
     }
 }
 
@@ -52,23 +52,23 @@ pub extern "C" fn error_message(error_code: c_int) -> *const c_uchar {
 ///
 /// # Arguments
 ///
-/// * `peripheral` - A pointer to a peripheral struct
+/// * `plugin_data` - A pointer to a PluginData struct
 /// * `id` - The id of the attribute
 /// * `buffer` - A buffer of bytes into which the attribute's name will be written
 /// * `length` - The length of the buffer
 pub unsafe extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError>(
-    peripheral: *const Peripheral,
+    plugin_data: *const PluginData,
     id: size_t,
     buffer: *mut c_uchar,
     length: size_t,
 ) -> c_int {
-    if peripheral.is_null() {
-        log::error!("peripheral pointer is null");
+    if plugin_data.is_null() {
+        log::error!("plugin_data pointer is null");
         return NULL_PTR_ERR;
     }
-    let peripheral = peripheral as *const T;
+    let plugin_data = plugin_data as *const T;
 
-    let name: &[u8] = match (*peripheral).attribute_name(id) {
+    let name: &[u8] = match (*plugin_data).attribute_name(id) {
         Ok(name) => name.to_bytes_with_nul(),
         Err(e) => return e.error_code(),
     };
@@ -90,21 +90,21 @@ pub unsafe extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError>(
 ///
 /// # Arguments
 ///
-/// * `peripheral` - A pointer to a peripheral struct
+/// * `plugin_data` - A pointer to a PluginData struct
 /// * `id` - The id of the attribute
 /// * `value` - A pointer to a Value enum. The enum is provided by this function's caller.
 pub unsafe extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError>(
-    peripheral: *const Peripheral,
+    plugin_data: *const PluginData,
     id: size_t,
     value: *mut Value,
 ) -> c_int {
-    if peripheral.is_null() {
-        log::error!("peripheral pointer is null");
+    if plugin_data.is_null() {
+        log::error!("plugin_data pointer is null");
         return NULL_PTR_ERR;
     }
-    let peripheral = peripheral as *const T;
+    let plugin_data = plugin_data as *const T;
 
-    match (*peripheral).attribute_value(id) {
+    match (*plugin_data).attribute_value(id) {
         Ok(new_value) => {
             log::debug!(
                 "Response for the value of attribute {}: {:?}",
@@ -130,26 +130,26 @@ pub unsafe extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError>(
 ///
 /// # Arguments
 ///
-/// * `peripheral` - A pointer to a peripheral struct
+/// * `plugin_data` - A pointer to a PluginData struct
 /// * `id` - The id of the attribute
 /// * `value` - A pointer to a Value enum. The enum is provided by this function's caller and will
 /// be copied.
 pub unsafe extern "C" fn set_attribute_value<T: PluginAPI<E>, E: PluginError>(
-    peripheral: *mut Peripheral,
+    plugin_data: *mut PluginData,
     id: size_t,
     value: *const Value,
 ) -> c_int {
-    if peripheral.is_null() {
-        log::error!("peripheral pointer is null");
+    if plugin_data.is_null() {
+        log::error!("plugin_data pointer is null");
         return NULL_PTR_ERR;
     }
     if value.is_null() {
         log::error!("value pointer is null");
         return NULL_PTR_ERR;
     }
-    let peripheral = peripheral as *mut T;
+    let plugin_data = plugin_data as *mut T;
 
-    match (*peripheral).attribute_set_value(id, &*value) {
+    match (*plugin_data).attribute_set_value(id, &*value) {
         Ok(_) => {
             log::debug!("Set attribute {} to {:?}", id, *value);
             PLUGIN_OK
