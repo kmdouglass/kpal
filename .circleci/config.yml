@@ -47,7 +47,7 @@ commands:
           name: Lint code
           command: |
             clippy-driver --version
-            cargo clippy --workspace --all-targets -- -D warnings
+            cargo clippy --workspace --all-targets << parameters.target >> -- -D warnings
       - run:
           name: Build all targets
           command: |

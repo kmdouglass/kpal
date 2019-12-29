@@ -21,6 +21,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added the Dependabot dependencey management service to the GitHub repo.
 - Added steps to the CI to check that the code has been linted with `cargo clippy`.
 - A new set of jobs was added to the CI to build and publish Dockerfiles to Docker Hub.
+- `kpal-plugin` now exposes a `KpalLibraryInit` type that is used by the daemon to initialize
+  plugin libraries. Previously, the function signature was hard-coded.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.

@@ -1,18 +1,19 @@
 //! Methods for loading and initializing plugin libraries.
-use std::error::Error;
-use std::ffi::OsStr;
-use std::fmt;
-use std::fs::read_dir;
-use std::io;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::{
+    error::Error,
+    ffi::OsStr,
+    fmt,
+    fs::read_dir,
+    io,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
 use libc::c_int;
-use libloading::Library as Dll;
-use libloading::Symbol;
+use libloading::{Library as Dll, Symbol};
 use log;
 
-use kpal_plugin::constants::*;
+use kpal_plugin::{constants::*, KpalLibraryInit};
 
 use crate::models::Library;
 
@@ -153,7 +154,7 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
 /// * `lib` - The library to initialize
 fn initialize_library(lib: &Dll) -> Result<c_int, io::Error> {
     unsafe {
-        let init: Symbol<extern "C" fn() -> c_int> = lib.get(b"kpal_library_init\0")?;
+        let init: Symbol<KpalLibraryInit> = lib.get(b"kpal_library_init\0")?;
         Ok(init())
     }
 }
