@@ -95,7 +95,7 @@ impl Executor {
 
         let result = unsafe {
             (self.plugin.vtable.attribute_name)(
-                self.plugin.peripheral,
+                self.plugin.plugin_data,
                 id,
                 &mut name[0] as *mut c_uchar,
                 ATTRIBUTE_NAME_BUFFER_LENGTH,
@@ -148,7 +148,7 @@ impl Executor {
     /// * `value` - A reference to a value instance into which the attribute's value will be copied
     pub fn attribute_value(&self, id: size_t, value: &mut Value) -> Result<(), ValueError> {
         let result = unsafe {
-            (self.plugin.vtable.attribute_value)(self.plugin.peripheral, id, value as *mut Value)
+            (self.plugin.vtable.attribute_value)(self.plugin.plugin_data, id, value as *mut Value)
         };
 
         if result == PLUGIN_OK {
@@ -183,7 +183,7 @@ impl Executor {
     pub fn set_attribute_value(&self, id: size_t, value: &Value) -> Result<(), SetValueError> {
         let result = unsafe {
             (self.plugin.vtable.set_attribute_value)(
-                self.plugin.peripheral,
+                self.plugin.plugin_data,
                 id,
                 value as *const Value,
             )
@@ -288,12 +288,12 @@ mod tests {
 
     use libc::{c_int, c_uchar, size_t};
 
-    use kpal_plugin::{Peripheral, Plugin, VTable, Value};
+    use kpal_plugin::{Plugin, PluginData, VTable, Value};
 
     use crate::models::Peripheral as ModelPeripheral;
 
-    type AttributeName = extern "C" fn(*const Peripheral, size_t, *mut c_uchar, size_t) -> c_int;
-    type AttributeValue = extern "C" fn(*const Peripheral, size_t, *mut Value) -> c_int;
+    type AttributeName = extern "C" fn(*const PluginData, size_t, *mut c_uchar, size_t) -> c_int;
+    type AttributeValue = extern "C" fn(*const PluginData, size_t, *mut Value) -> c_int;
 
     #[test]
     fn test_error_message() {
@@ -381,15 +381,18 @@ mod tests {
     }
 
     fn set_up() -> (Plugin, ModelPeripheral) {
-        let peripheral = Box::into_raw(Box::new(MockPeripheralData {})) as *mut Peripheral;
+        let plugin_data = Box::into_raw(Box::new(MockPluginData {})) as *mut PluginData;
         let vtable = VTable {
-            peripheral_free: def_peripheral_free,
+            plugin_free: def_peripheral_free,
             error_message: def_error_message,
             attribute_name: def_attribute_name,
             attribute_value: def_attribute_value,
             set_attribute_value: def_set_attribute_value,
         };
-        let plugin = Plugin { peripheral, vtable };
+        let plugin = Plugin {
+            plugin_data,
+            vtable,
+        };
 
         let model: ModelPeripheral =
             serde_json::from_str(r#"{"name":"foo","library_id":0}"#).unwrap();
@@ -398,20 +401,20 @@ mod tests {
     }
 
     fn tear_down(plugin: Plugin) {
-        unsafe { Box::from_raw(plugin.peripheral) };
+        unsafe { Box::from_raw(plugin.plugin_data) };
     }
 
-    struct MockPeripheralData {}
+    struct MockPluginData {}
 
     // Default function pointers for the vtable
-    extern "C" fn def_peripheral_free(_: *mut Peripheral) {}
+    extern "C" fn def_peripheral_free(_: *mut PluginData) {}
 
     extern "C" fn def_error_message(_: c_int) -> *const c_uchar {
         b"foo\0" as *const c_uchar
     }
 
     extern "C" fn def_attribute_name(
-        _: *const Peripheral,
+        _: *const PluginData,
         id: size_t,
         buffer: *mut c_uchar,
         _: size_t,
@@ -428,7 +431,7 @@ mod tests {
         }
     }
     extern "C" fn def_attribute_value(
-        _: *const Peripheral,
+        _: *const PluginData,
         id: size_t,
         value: *mut Value,
     ) -> c_int {
@@ -439,13 +442,13 @@ mod tests {
             ATTRIBUTE_DOES_NOT_EXIST
         }
     }
-    extern "C" fn def_set_attribute_value(_: *mut Peripheral, _: size_t, _: *const Value) -> c_int {
+    extern "C" fn def_set_attribute_value(_: *mut PluginData, _: size_t, _: *const Value) -> c_int {
         0
     }
 
     // Function pointers used by different test cases
     extern "C" fn attribute_name_ok(
-        _: *const Peripheral,
+        _: *const PluginData,
         _: size_t,
         _: *mut c_uchar,
         _: size_t,
@@ -453,7 +456,7 @@ mod tests {
         PLUGIN_OK
     }
     extern "C" fn attribute_name_does_not_exist(
-        _: *const Peripheral,
+        _: *const PluginData,
         _: size_t,
         _: *mut c_uchar,
         _: size_t,
@@ -461,24 +464,24 @@ mod tests {
         ATTRIBUTE_DOES_NOT_EXIST
     }
     extern "C" fn attribute_name_failure(
-        _: *const Peripheral,
+        _: *const PluginData,
         _: size_t,
         _: *mut c_uchar,
         _: size_t,
     ) -> c_int {
         999
     }
-    extern "C" fn attribute_value_ok(_: *const Peripheral, _: size_t, _: *mut Value) -> c_int {
+    extern "C" fn attribute_value_ok(_: *const PluginData, _: size_t, _: *mut Value) -> c_int {
         PLUGIN_OK
     }
     extern "C" fn attribute_value_does_not_exist(
-        _: *const Peripheral,
+        _: *const PluginData,
         _: size_t,
         _: *mut Value,
     ) -> c_int {
         ATTRIBUTE_DOES_NOT_EXIST
     }
-    extern "C" fn attribute_value_failure(_: *const Peripheral, _: size_t, _: *mut Value) -> c_int {
+    extern "C" fn attribute_value_failure(_: *const PluginData, _: size_t, _: *mut Value) -> c_int {
         999
     }
 }

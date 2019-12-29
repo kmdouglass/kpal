@@ -84,45 +84,4 @@ impl PluginAPI<GPIOPluginError> for GPIOPlugin {
     }
 }
 
-// FFI
-#[no_mangle]
-pub extern "C" fn kpal_library_init() -> c_int {
-    env_logger::init();
-    PLUGIN_OK
-}
-
-/// Initialize the plugin.
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences a null pointer and assigns data to a variable
-/// of the type `MaybeUnit`.
-#[no_mangle]
-pub unsafe extern "C" fn kpal_plugin_init(plugin: *mut Plugin) -> c_int {
-    let plugin_data = match GPIOPlugin::new() {
-        Ok(plugin_data) => plugin_data,
-        Err(e) => {
-            log::error!("Failed to initialize the plugin: {:?}", e);
-            return PLUGIN_INIT_ERR;
-        }
-    };
-
-    let plugin_data: Box<GPIOPlugin> = Box::new(plugin_data);
-    let plugin_data = Box::into_raw(plugin_data) as *mut Peripheral;
-
-    let vtable = VTable {
-        peripheral_free,
-        error_message,
-        attribute_name: attribute_name::<GPIOPlugin, GPIOPluginError>,
-        attribute_value: attribute_value::<GPIOPlugin, GPIOPluginError>,
-        set_attribute_value: set_attribute_value::<GPIOPlugin, GPIOPluginError>,
-    };
-
-    plugin.write(Plugin {
-        peripheral: plugin_data,
-        vtable,
-    });
-
-    log::debug!("Initialized plugin: {:?}", plugin);
-    PLUGIN_OK
-}
+declare_plugin!(GPIOPlugin, GPIOPluginError);

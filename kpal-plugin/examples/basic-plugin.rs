@@ -1,34 +1,34 @@
 //! A basic example of a plugin library with data but no hardware routines.
 //!
 //! This example demonstrates how to write a minimal plugin library that is capable of
-//! communicating with a fake peripheral consisting of only a Rust struct. It does not communicate
-//! with any actual hardware. Its primary purpose is for demonstration and testing.
+//! communicating with a fake plugin consisting of only a Rust struct. It does not communicate with
+//! any actual hardware. Its primary purpose is for demonstration and testing.
 //!
 //! A library such as this one consists of four parts:
 //!
-//! 1. a struct which contains the peripheral's data
+//! 1. a struct which contains the plugin's data
 //! 2. a set of methods that the struct implements for manipulating the data and communicating with
-//! the peripheral
+//! the plugin
 //! 3. initialization routines that are exposed through the C API
 //! 4. a set of functions that comprise the plugin API
 // Import any needed items from the standard and 3rd party libraries.
-use std::boxed::Box;
-use std::error::Error;
-use std::ffi::{CStr, CString};
-use std::fmt;
+use std::{
+    boxed::Box,
+    error::Error,
+    ffi::{CStr, CString},
+    fmt,
+};
 
 use libc::c_int;
 
 // Import the tools provided by the plugin library.
-use kpal_plugin::constants::*;
-use kpal_plugin::Value::*;
-use kpal_plugin::*;
+use kpal_plugin::{constants::*, Value::*, *};
 
-/// The first component of a plugin library is a struct that contains the peripheral's data.
+/// The first component of a plugin library is a struct that contains the plugin's data.
 ///
 /// In this example, the struct contains only one field, `attributes`, which contains the list of
-/// all peripheral attributes provided by the plugin. In general, it can contain any number of
-/// fields that are necessary for the plugin.
+/// all attributes provided by the plugin. In general, it can contain any number of fields that are
+/// necessary for the plugin.
 #[derive(Debug)]
 #[repr(C)]
 struct Basic {
@@ -36,6 +36,9 @@ struct Basic {
     attributes: Vec<Attribute>,
 }
 
+// Plugins implement the PluginAPI trait. They take a custom error type that is also provided by
+// the library (see below) and an associated type that indicates the type that holds the plugin's
+// data.
 impl PluginAPI<BasicError> for Basic {
     type Plugin = Basic;
 
@@ -56,10 +59,11 @@ impl PluginAPI<BasicError> for Basic {
     }
 
     // The following methods that are implementend by the struct would normally communicate with
-    // the peripheral. In this example, they simply return the values stored within the struct.
+    // the hardware device. In this example, they simply return the values stored within the
+    // struct.
     /// Returns the name of an attribute.
     ///
-    /// If the attribute that corresponds to the `id` does not exist, then a `PluginError` is
+    /// If the attribute that corresponds to the `id` does not exist, then an error is
     /// returned. Otherwise, the name is returned as a C-compatible `&CStr`.
     ///
     /// # Arguments
@@ -77,7 +81,7 @@ impl PluginAPI<BasicError> for Basic {
 
     /// Returns the value of an attribute.
     ///
-    /// If the attribute that corresponds to the `id` does not exist, then a `PluginError` is
+    /// If the attribute that corresponds to the `id` does not exist, then an error is
     /// returned. Otherwise, the value is returnd as a C-compatible tagged enum.
     ///
     /// # Arguments
@@ -95,7 +99,7 @@ impl PluginAPI<BasicError> for Basic {
     /// Sets the value of the attribute given by the id.
     ///
     /// If the attribute that corresponds to the `id` does not exist, or if the attribute cannot be
-    /// set, then a `PluginError` is returned.
+    /// set, then an error is returned.
     ///
     /// # Arguments
     ///
@@ -123,6 +127,12 @@ impl PluginAPI<BasicError> for Basic {
     }
 }
 
+/// The plugin's error type.
+///
+/// Plugin methods all return the same, custom error type provided by the plugin author(s). This
+/// allows developers to pack any information that they wish into the error type. In addition, by
+/// providing their own error, plugin authors can implement the From trait to automatically
+/// transform errors raised in the PluginAPI methods into this type with the `?` operator.
 #[derive(Debug)]
 struct BasicError {
     error_code: c_int,
@@ -136,63 +146,26 @@ impl fmt::Display for BasicError {
     }
 }
 
+/// KPAL requires that the library's custom error implement the PluginError trait
+///
+/// This ensures that required information is always passed back to the daemon.
 impl PluginError for BasicError {
+    /// Returns the error code associated with the plugin's error.
+    ///
+    /// This code should be one of the values found in the `constants` module.
     fn error_code(&self) -> c_int {
         self.error_code
     }
 }
 
-// The following functions are required. They are used by the daemon to initialize the library and
-// new plugin instances.
-/// Initializes the library.
-///
-/// This function is called only once by the daemon. It is called when a library is first loaded
-/// into memory.
-#[no_mangle]
-pub extern "C" fn kpal_library_init() -> c_int {
-    env_logger::init();
-    PLUGIN_OK
-}
+// Now that everything has been setup, we call the `declare_plugin` macro to automatically generate
+// the functions and structures that will be used by the daemon to communicate with the
+// plugin. This macro allows plugin developers to entirely avoid writing unsafe, foreign function
+// interface code.
+declare_plugin!(Basic, BasicError);
 
-/// Returns a new Plugin instance containing the peripheral data and the function vtable.
-///
-/// The plugin is used by the daemon to communicate with the peripheral. It contains an opaque
-/// pointer to the peripheral and a vtable. The vtable is a struct of function pointers to the
-/// remaining functions in the plugin API.
-///
-/// # Safety
-///
-/// This function is unsafe because it dereferences a null pointer and assigns data to a variable
-/// of the type `MaybeUnit`.
-#[no_mangle]
-pub unsafe extern "C" fn kpal_plugin_init(plugin: *mut Plugin) -> c_int {
-    let plugin_data = match Basic::new() {
-        Ok(plugin_data) => plugin_data,
-        Err(e) => {
-            log::error!("Plugin initialization failed: {:?}", e);
-            return PLUGIN_INIT_ERR;
-        }
-    };
-    let plugin_data: Box<Basic> = Box::new(plugin_data);
-    let plugin_data = Box::into_raw(plugin_data) as *mut Peripheral;
-
-    let vtable = VTable {
-        peripheral_free,
-        error_message,
-        attribute_name: attribute_name::<Basic, BasicError>,
-        attribute_value: attribute_value::<Basic, BasicError>,
-        set_attribute_value: set_attribute_value::<Basic, BasicError>,
-    };
-
-    plugin.write(Plugin {
-        peripheral: plugin_data,
-        vtable,
-    });
-
-    log::debug!("Initialized plugin: {:?}", plugin);
-    PLUGIN_OK
-}
-
+// Unit tests for the plugin lie within a module called `tests` that is preceded by a #[cfg(test)]
+// attribute.
 #[cfg(test)]
 mod tests {
     use libc::c_uchar;
@@ -240,13 +213,13 @@ mod tests {
 
     #[test]
     fn set_attribute_value() {
-        let mut peripheral = Basic::new().unwrap();
+        let mut plugin = Basic::new().unwrap();
         let new_values = vec![Value::Float(3.14), Value::Int(4)];
 
         // Test setting each attribute to the new value
         for (i, value) in new_values.into_iter().enumerate() {
-            peripheral.attribute_set_value(i, &value).unwrap();
-            let actual = &peripheral.attributes[i].value;
+            plugin.attribute_set_value(i, &value).unwrap();
+            let actual = &plugin.attributes[i].value;
             assert_eq!(
                 value, *actual,
                 "Expected attribute value to be {:?} but it was {:?}",
@@ -257,10 +230,10 @@ mod tests {
 
     #[test]
     fn set_attribute_wrong_variant() {
-        let mut peripheral = Basic::new().unwrap();
+        let mut plugin = Basic::new().unwrap();
         let new_value = Value::Float(42.0);
 
-        let result = peripheral.attribute_set_value(1, &new_value);
+        let result = plugin.attribute_set_value(1, &new_value);
         match result {
             Ok(_) => panic!("Expected different value variants."),
             Err(_) => (),
