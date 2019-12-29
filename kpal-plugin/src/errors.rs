@@ -20,6 +20,7 @@ pub static ERRORS: [&[u8]; 8] = [
 ];
 
 pub mod constants {
+    //! Constants that indicate specific error codes that a plugin can return.
     use libc::c_int;
 
     pub const PLUGIN_OK: c_int = 0;

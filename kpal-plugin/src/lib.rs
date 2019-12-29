@@ -111,6 +111,9 @@ pub struct VTable {
 /// The type signature of the function that returns a new plugin instance.
 pub type KpalPluginInit = unsafe extern "C" fn(*mut Plugin) -> c_int;
 
+/// The type signature of the function that initializes a library.
+pub type KpalLibraryInit = unsafe extern "C" fn() -> c_int;
+
 /// A single piece of information that partly determines the state of a peripheral.
 #[derive(Debug)]
 #[repr(C)]
