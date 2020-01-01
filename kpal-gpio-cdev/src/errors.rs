@@ -30,6 +30,13 @@ impl fmt::Display for GPIOPluginError {
 }
 
 impl PluginError for GPIOPluginError {
+    fn new(error_code: c_int) -> GPIOPluginError {
+        GPIOPluginError {
+            error_code,
+            side: None,
+        }
+    }
+
     fn error_code(&self) -> c_int {
         self.error_code
     }

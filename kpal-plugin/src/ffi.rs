@@ -56,7 +56,7 @@ pub extern "C" fn error_message(error_code: c_int) -> *const c_uchar {
 /// * `id` - The id of the attribute
 /// * `buffer` - A buffer of bytes into which the attribute's name will be written
 /// * `length` - The length of the buffer
-pub unsafe extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError>(
+pub unsafe extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError + 'static>(
     plugin_data: *const PluginData,
     id: size_t,
     buffer: *mut c_uchar,
@@ -68,14 +68,11 @@ pub unsafe extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError>(
     }
     let plugin_data = plugin_data as *const T;
 
-    let name: &[u8] = match (*plugin_data).attribute_name(id) {
-        Ok(name) => name.to_bytes_with_nul(),
-        Err(e) => return e.error_code(),
-    };
-
-    match copy_string(name, buffer, length) {
-        Ok(_) => PLUGIN_OK,
-        Err(_) => UNDEFINED_ERR,
+    match (*plugin_data).attribute_name(id) {
+        Ok(name) => copy_string(name.to_bytes_with_nul(), buffer, length)
+            .map(|_| PLUGIN_OK)
+            .unwrap_or_else(|_| UNDEFINED_ERR),
+        Err(e) => e.error_code(),
     }
 }
 
@@ -93,7 +90,7 @@ pub unsafe extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError>(
 /// * `plugin_data` - A pointer to a PluginData struct
 /// * `id` - The id of the attribute
 /// * `value` - A pointer to a Value enum. The enum is provided by this function's caller.
-pub unsafe extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError>(
+pub unsafe extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError + 'static>(
     plugin_data: *const PluginData,
     id: size_t,
     value: *mut Value,
@@ -134,7 +131,7 @@ pub unsafe extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError>(
 /// * `id` - The id of the attribute
 /// * `value` - A pointer to a Value enum. The enum is provided by this function's caller and will
 /// be copied.
-pub unsafe extern "C" fn set_attribute_value<T: PluginAPI<E>, E: PluginError>(
+pub unsafe extern "C" fn set_attribute_value<T: PluginAPI<E>, E: PluginError + 'static>(
     plugin_data: *mut PluginData,
     id: size_t,
     value: *const Value,

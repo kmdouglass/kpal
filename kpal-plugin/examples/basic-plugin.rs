@@ -14,15 +14,18 @@
 // Import any needed items from the standard and 3rd party libraries.
 use std::{
     boxed::Box,
+    cell::RefCell,
+    convert::TryInto,
     error::Error,
-    ffi::{CStr, CString},
+    ffi::CString,
     fmt,
+    time::{SystemTime, UNIX_EPOCH}, // These are used to generate a random number for an example.
 };
 
-use libc::c_int;
+use libc::{c_int, c_long};
 
 // Import the tools provided by the plugin library.
-use kpal_plugin::{constants::*, Value::*, *};
+use kpal_plugin::{constants::*, *};
 
 /// The first component of a plugin library is a struct that contains the plugin's data.
 ///
@@ -33,98 +36,119 @@ use kpal_plugin::{constants::*, Value::*, *};
 #[repr(C)]
 struct Basic {
     /// A Vec of attributes that describe the peripheral's state.
-    attributes: Vec<Attribute>,
+    ///
+    /// We wrap the attributes in a RefCell so that we can mutate their values inside methods where
+    /// instances of this struct are immutable.
+    attributes: Attributes<Self, BasicError>,
 }
 
-// Plugins implement the PluginAPI trait. They take a custom error type that is also provided by
-// the library (see below) and an associated type that indicates the type that holds the plugin's
-// data.
+// Plugins implement the PluginAPI trait. They take a custom error type as a type parameter that is
+// also provided by the library (see below).
 impl PluginAPI<BasicError> for Basic {
-    type Plugin = Basic;
-
-    /// Returns a new instance of the peripheral.
+    /// Returns a new instance of the plugin.
     fn new() -> Result<Basic, BasicError> {
         Ok(Basic {
-            attributes: vec![
+            attributes: RefCell::new(vec![
                 Attribute {
-                    name: CString::new("x").expect("Error creating CString"),
+                    name: CString::new("x").unwrap(),
                     value: Value::Float(0.0),
+                    // Settable attributes should use the GetAndSet variant.
+                    callbacks: Callbacks::GetAndSet(on_get_x, on_set_x),
                 },
                 Attribute {
-                    name: CString::new("y").expect("Error creating CString"),
+                    name: CString::new("y").unwrap(),
                     value: Value::Int(0),
+                    // Not all attributes can be set. For example, the value of a sensor may only
+                    // be readable. For these attributes, use the Get variant.
+                    callbacks: Callbacks::Get(on_get_y),
                 },
-            ],
+                Attribute {
+                    name: CString::new("z").unwrap(),
+                    value: Value::Int(42),
+                    // Attributes that are constant should use the Constant variant of the
+                    // Callbacks enum. They are not settable and will always return the same value.
+                    callbacks: Callbacks::Constant,
+                },
+            ]),
         })
     }
 
-    // The following methods that are implementend by the struct would normally communicate with
-    // the hardware device. In this example, they simply return the values stored within the
-    // struct.
-    /// Returns the name of an attribute.
+    /// Returns the attributes of the plugin.
     ///
-    /// If the attribute that corresponds to the `id` does not exist, then an error is
-    /// returned. Otherwise, the name is returned as a C-compatible `&CStr`.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - the numeric ID of the attribute
-    fn attribute_name(&self, id: usize) -> Result<&CStr, BasicError> {
-        log::debug!("Received request for the name of attribute: {}", id);
-        match self.attributes.get(id) {
-            Some(attribute) => Ok(&attribute.name),
-            None => Err(BasicError {
-                error_code: ATTRIBUTE_DOES_NOT_EXIST,
-            }),
-        }
+    /// This method must be defined by a plugin library because the PluginAPI trait cannot specify
+    /// the name of the field of the Basic struct that stores the attributes.
+    fn attributes(&self) -> &Attributes<Basic, BasicError> {
+        &self.attributes
     }
+}
 
-    /// Returns the value of an attribute.
-    ///
-    /// If the attribute that corresponds to the `id` does not exist, then an error is
-    /// returned. Otherwise, the value is returnd as a C-compatible tagged enum.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - the numeric ID of the attribute
-    fn attribute_value(&self, id: usize) -> Result<Value, BasicError> {
-        log::debug!("Received request for the value of attribute: {}", id);
-        let attribute = self.attributes.get(id).ok_or_else(|| BasicError {
-            error_code: ATTRIBUTE_DOES_NOT_EXIST,
-        })?;
+// Callbacks are used to acutally communicate with the hardware whenever an attribute is read or
+// set. Each settable attribute needs its own pair of callbacks, one for getting the value of the
+// attribute and one for setting its value.
+/// Callback function that is fired when the 'x' attribute is read.
+///
+/// # Arguments
+///
+/// * `_plugin` - A reference to the plugin struct. This provides the callback with the plugin's
+/// state.
+/// * `cached` - The most recently read or modified value of the attribute.
+fn on_get_x(_plugin: &Basic, cached: &mut Value) -> Result<Value, BasicError> {
+    // Normally, we would communicate with the hardware here to get the value of the
+    // attribute. Since this is an example plugin, however, we just print a message to the terminal
+    // instead and return the cached value of the attribute.
+    //
+    // In a real plugin, you could use the cached argument to cache the attribute's value and avoid
+    // communicating with the hardware if some condition is true. For example, you could store a
+    // boolean value in the plugin struct and, only if it is true, return cached without querying
+    // the hardware.
+    println!("Getting the value of attribute x");
 
-        Ok(attribute.value.clone())
-    }
+    Ok(cached.clone())
+}
 
-    /// Sets the value of the attribute given by the id.
-    ///
-    /// If the attribute that corresponds to the `id` does not exist, or if the attribute cannot be
-    /// set, then an error is returned.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - the numeric ID of the attribute
-    /// * `value` - a reference to a value
-    fn attribute_set_value(&mut self, id: usize, value: &Value) -> Result<(), BasicError> {
-        log::debug!("Received request to set the value of attribute: {}", id);
-        let current_value = &mut self
-            .attributes
-            .get_mut(id)
-            .ok_or_else(|| BasicError {
-                error_code: ATTRIBUTE_DOES_NOT_EXIST,
-            })?
-            .value;
+/// Callback function that is fired when the 'x' attribute is set.
+///
+/// # Arguments
+///
+/// * `_plugin` - A reference to the plugin struct. This provides the callback with the plugin's
+/// state.
+/// * `cached` - The most most recently read or modified value of the attribute.
+/// * `value` - The new value of the attribute.
+fn on_set_x(_plugin: &Basic, cached: &mut Value, value: &Value) -> Result<(), BasicError> {
+    // Like in the callback above, in this example plugin we only update the cached value with the
+    // new one instead of communicating with any real hardware.
+    println!("Setting the value of attribute x");
+    *cached = value.clone();
+    Ok(())
+}
 
-        match (&current_value, &value) {
-            (Int(_), Int(_)) | (Float(_), Float(_)) => {
-                *current_value = (*value).clone();
-                Ok(())
-            }
-            _ => Err(BasicError {
-                error_code: ATTRIBUTE_TYPE_MISMATCH,
-            }),
-        }
-    }
+/// Callback function that is fired when the 'y' attribute is read.
+///
+/// Not every attribute needs a callback for setting its value. Here, we demonstrate this by
+/// defining only a `get` callback for the attribute `y`.
+///
+/// # Arguments
+///
+/// * `_plugin` - A reference to the plugin struct. This provides the callback with the plugin's
+/// state.
+/// * `cached` - The most most recently read or modified value of the attribute.
+fn on_get_y(_plugin: &Basic, cached: &mut Value) -> Result<Value, BasicError> {
+    println!("Getting the value of attribute y");
+    // This simulates a random value from a sensor; its implementation does not matter for the
+    // purpose of this example.
+    let rand_int: c_long = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .subsec_nanos()
+        .try_into()
+        .unwrap_or(42);
+
+    let value = Value::Int(rand_int);
+
+    // Update the attribute's cached value
+    *cached = value.clone();
+
+    Ok(value)
 }
 
 /// The plugin's error type.
@@ -150,7 +174,12 @@ impl fmt::Display for BasicError {
 ///
 /// This ensures that required information is always passed back to the daemon.
 impl PluginError for BasicError {
-    /// Returns the error code associated with the plugin's error.
+    /// Intializes and returns a new instance of the plugin's error type.
+    fn new(error_code: c_int) -> BasicError {
+        BasicError { error_code }
+    }
+
+    /// Returns the error code associated with the plugin's error type.
     ///
     /// This code should be one of the values found in the `constants` module.
     fn error_code(&self) -> c_int {
@@ -214,18 +243,17 @@ mod tests {
     #[test]
     fn set_attribute_value() {
         let mut plugin = Basic::new().unwrap();
-        let new_values = vec![Value::Float(3.14), Value::Int(4)];
+        let new_value = Value::Float(3.14);
 
         // Test setting each attribute to the new value
-        for (i, value) in new_values.into_iter().enumerate() {
-            plugin.attribute_set_value(i, &value).unwrap();
-            let actual = &plugin.attributes[i].value;
-            assert_eq!(
-                value, *actual,
-                "Expected attribute value to be {:?} but it was {:?}",
-                value, *actual
-            )
-        }
+        plugin.attribute_set_value(0, &new_value).unwrap();
+        let attributes = plugin.attributes.borrow();
+        let actual = &attributes[0].value;
+        assert_eq!(
+            new_value, *actual,
+            "Expected attribute value to be {:?} but it was {:?}",
+            new_value, *actual
+        )
     }
 
     #[test]

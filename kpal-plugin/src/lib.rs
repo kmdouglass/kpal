@@ -7,9 +7,11 @@ mod ffi;
 mod strings;
 
 use std::{
-    cmp::{Eq, PartialEq},
+    cell::{Ref, RefCell},
+    cmp::PartialEq,
     error::Error,
-    ffi::{CStr, CString},
+    ffi::CString,
+    fmt,
 };
 
 use libc::{c_double, c_int, c_long, c_uchar, size_t};
@@ -20,24 +22,97 @@ pub use ffi::*;
 pub use strings::copy_string;
 
 /// The set of functions that must be implemented by a plugin.
-pub trait PluginAPI<E: Error + PluginError> {
-    type Plugin;
-
+pub trait PluginAPI<E: Error + PluginError + 'static>
+where
+    Self: Sized,
+{
     /// Initializes and returns a new instance of the plugin.
-    fn new() -> Result<Self::Plugin, E>;
+    fn new() -> Result<Self, E>;
 
-    /// Returns the name of an attribute of the plugin.
-    fn attribute_name(&self, id: usize) -> Result<&CStr, E>;
+    /// Returns the attributes of the plugin.
+    fn attributes(&self) -> &Attributes<Self, E>;
 
-    /// Returns the value of an attribute of the plugin.
-    fn attribute_value(&self, id: usize) -> Result<Value, E>;
+    /// Returns the name of an attribute.
+    ///
+    /// If the attribute that corresponds to the `id` does not exist, then an error is
+    /// returned. Otherwise, the name is returned as a C-compatible `&CStr`.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - the numeric ID of the attribute
+    fn attribute_name(&self, id: usize) -> Result<Ref<CString>, E> {
+        log::debug!("Received request for the name of attribute: {}", id);
+        let attributes = self.attributes().borrow();
+        match attributes.get(id) {
+            Some(_) => Ok(Ref::map(attributes, |a| &a[id].name)),
+            None => Err(E::new(constants::ATTRIBUTE_DOES_NOT_EXIST)),
+        }
+    }
 
-    /// Sets the value of an attribute.
-    fn attribute_set_value(&mut self, id: usize, value: &Value) -> Result<(), E>;
+    /// Returns the value of an attribute.
+    ///
+    /// If the attribute that corresponds to the `id` does not exist, then an error is
+    /// returned. Otherwise, the value is returnd as a C-compatible tagged enum.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - the numeric ID of the attribute
+    fn attribute_value(&self, id: usize) -> Result<Value, E> {
+        log::debug!("Received request for the value of attribute: {}", id);
+        let attributes = self.attributes();
+        let mut attributes = attributes.borrow_mut();
+        let attribute = attributes
+            .get_mut(id)
+            .ok_or_else(|| E::new(constants::ATTRIBUTE_DOES_NOT_EXIST))?;
+
+        let get = match attribute.callbacks {
+            Callbacks::Constant => return Ok(attribute.value.clone()),
+            Callbacks::Get(get) => get,
+            Callbacks::GetAndSet(get, _) => get,
+        };
+
+        get(&self, &mut attribute.value)
+    }
+
+    /// Sets the value of the attribute given by the id.
+    ///
+    /// If the attribute that corresponds to the `id` does not exist, or if the attribute cannot be
+    /// set, then an error is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - the numeric ID of the attribute
+    /// * `value` - a reference to a value
+    fn attribute_set_value(&self, id: usize, value: &Value) -> Result<(), E> {
+        log::debug!("Received request to set the value of attribute: {}", id);
+        use Value::*;
+        let attributes = self.attributes();
+        let mut attributes = attributes.borrow_mut();
+        let attribute = attributes
+            .get_mut(id)
+            .ok_or_else(|| E::new(constants::ATTRIBUTE_DOES_NOT_EXIST))?;
+
+        let set = match attribute.callbacks {
+            Callbacks::GetAndSet(_, set) => set,
+            _ => return Err(E::new(constants::ATTRIBUTE_IS_NOT_SETTABLE)),
+        };
+
+        match (&attribute.value, &value) {
+            (Int(_), Int(_)) | (Float(_), Float(_)) => set(&self, &mut attribute.value, value),
+            _ => Err(E::new(constants::ATTRIBUTE_TYPE_MISMATCH)),
+        }
+    }
 }
 
 /// The set of functions that must be implemented by a plugin library's main error type.
 pub trait PluginError: std::error::Error {
+    /// Initializes and returns a new instace of the error type.
+    ///
+    /// # Arguments
+    ///
+    /// * `error_code` - One of the integer error codes recognized by KPAL.
+    fn new(error_code: c_int) -> Self;
+
     /// Returns the error code of the instance.
     fn error_code(&self) -> c_int;
 }
@@ -128,23 +203,24 @@ pub type KpalPluginInit = unsafe extern "C" fn(*mut Plugin) -> c_int;
 /// The type signature of the function that initializes a library.
 pub type KpalLibraryInit = unsafe extern "C" fn() -> c_int;
 
+/// The type signature of the collection of attributes that is owned by the plugin.
+pub type Attributes<T, E> = RefCell<Vec<Attribute<T, E>>>;
+
 /// A single piece of information that partly determines the state of a plugin.
 #[derive(Debug)]
 #[repr(C)]
-pub struct Attribute {
+pub struct Attribute<T, E: Error + PluginError> {
     /// The name of the attribute.
     pub name: CString,
 
     /// The value of the attribute.
+    ///
+    /// This field may be used to cache values retrieved from the hardware. This is the initial
+    /// value of non-constant attributes.
     pub value: Value,
-}
 
-impl Eq for Attribute {}
-
-impl PartialEq for Attribute {
-    fn eq(&self, other: &Attribute) -> bool {
-        self.name == other.name
-    }
+    /// The callback functions that are fired when the attribute is either read or set.
+    pub callbacks: Callbacks<T, E>,
 }
 
 /// The value of an attribute.
@@ -155,6 +231,38 @@ impl PartialEq for Attribute {
 pub enum Value {
     Int(c_long),
     Float(c_double),
+}
+
+/// Callback functions that communicate with the hardware when an attribute is read or set.
+///
+/// The purpose of a callback is to perform the actual communication with the hardware. If the
+/// attribute is constant and never changes its original value, then the `Constant` variant should
+/// be used. If the attribute's value changes without user input (e.g. a sensor reading) but cannot
+/// be set, then use the `Get` variant. Otherwise, for attributes that can be both read and set,
+/// use the `GetAndSet` variant.
+#[repr(C)]
+pub enum Callbacks<T, E: Error + PluginError> {
+    Constant,
+    Get(fn(plugin: &T, cached: &mut Value) -> Result<Value, E>),
+    GetAndSet(
+        fn(plugin: &T, cached: &mut Value) -> Result<Value, E>,
+        fn(plugin: &T, cached: &mut Value, value: &Value) -> Result<(), E>,
+    ),
+}
+
+impl<T, E: Error + PluginError> fmt::Debug for Callbacks<T, E> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use Callbacks::*;
+        match *self {
+            Constant => write!(f, "Constant"),
+            Get(get) => write!(f, "Get Callback: {:x}", get as usize),
+            GetAndSet(get, set) => write!(
+                f,
+                "Get Callback: {:x}, Set Callback: {:x}",
+                get as usize, set as usize
+            ),
+        }
+    }
 }
 
 /// Creates the required symbols for a plugin library.
@@ -214,51 +322,4 @@ macro_rules! declare_plugin {
             PLUGIN_OK
         }
     };
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn properties_with_the_same_name_and_same_values_are_equal() {
-        let prop1_left = Attribute {
-            name: CString::new("prop1").unwrap(),
-            value: Value::Int(0),
-        };
-        let prop1_right = Attribute {
-            name: CString::new("prop1").unwrap(),
-            value: Value::Int(0),
-        };
-
-        assert_eq!(prop1_left, prop1_right);
-    }
-
-    #[test]
-    fn properties_with_the_same_name_and_different_values_are_equal() {
-        let prop1_left = Attribute {
-            name: CString::new("prop1").unwrap(),
-            value: Value::Int(0),
-        };
-        let prop1_right = Attribute {
-            name: CString::new("prop1").unwrap(),
-            value: Value::Int(1),
-        };
-
-        assert_eq!(prop1_left, prop1_right);
-    }
-
-    #[test]
-    fn properties_with_different_names_are_not_equal() {
-        let prop1 = Attribute {
-            name: CString::new("prop1").unwrap(),
-            value: Value::Int(0),
-        };
-        let prop2 = Attribute {
-            name: CString::new("prop2").unwrap(),
-            value: Value::Int(0),
-        };
-
-        assert_ne!(prop1, prop2);
-    }
 }

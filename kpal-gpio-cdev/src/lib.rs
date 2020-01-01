@@ -1,16 +1,13 @@
 //! KPAL plugin to control the output of a single GPIO pin using the GPIO char device.
 mod errors;
 
-use std::cell::RefCell;
-use std::convert::TryInto;
-use std::ffi::{CStr, CString};
+use std::{cell::RefCell, convert::TryInto, ffi::CString};
 
 use gpio_cdev::{Chip, LineHandle, LineRequestFlags};
 use libc::c_int;
 use log;
 
-use kpal_plugin::constants::*;
-use kpal_plugin::*;
+use kpal_plugin::{constants::*, *};
 
 use crate::errors::*;
 
@@ -19,17 +16,21 @@ const DEVICE_FILE: &str = "/dev/gpiochip0";
 /// The GPIO pin number.
 const OFFSET: u32 = 4;
 
+/// Holds the state of the plugin, including the chip and line handles.
 #[derive(Debug)]
 #[repr(C)]
 struct GPIOPlugin {
+    /// The collection of attributes that describe this plugin.
+    attributes: Attributes<Self, GPIOPluginError>,
+
+    /// A handle to the chip that represents the character device.
     chip: RefCell<Chip>,
+
+    /// A handle to the particular GPIO line that is controlled by this plugin.
     line_handle: LineHandle,
-    pin_state_label: CString,
 }
 
 impl PluginAPI<GPIOPluginError> for GPIOPlugin {
-    type Plugin = GPIOPlugin;
-
     /// Returns a new instance of a GPIO plugin.
     fn new() -> Result<GPIOPlugin, GPIOPluginError> {
         let mut chip = Chip::new(DEVICE_FILE)?;
@@ -38,50 +39,60 @@ impl PluginAPI<GPIOPluginError> for GPIOPlugin {
             .get_line(OFFSET)?
             .request(LineRequestFlags::OUTPUT, 0, "set-output")?;
 
+        let attributes = RefCell::new(vec![Attribute {
+            name: CString::new("Pin state").unwrap(),
+            value: Value::Int(0),
+            callbacks: Callbacks::GetAndSet(on_get_pin_state, on_set_pin_state),
+        }]);
+
         Ok(GPIOPlugin {
+            attributes,
             chip: RefCell::new(chip),
             line_handle: handle,
-            pin_state_label: CString::new("Pin state").expect("failed to create attribute name"),
         })
     }
 
-    fn attribute_name(&self, id: usize) -> Result<&CStr, GPIOPluginError> {
-        log::debug!("Received request for the name of attribute: {}", id);
-        match id {
-            0 => Ok(&self.pin_state_label),
-            _ => Err(GPIOPluginError {
-                error_code: ATTRIBUTE_DOES_NOT_EXIST,
-                side: None,
-            }),
-        }
+    fn attributes(&self) -> &Attributes<GPIOPlugin, GPIOPluginError> {
+        &self.attributes
     }
+}
 
-    fn attribute_value(&self, id: usize) -> Result<Value, GPIOPluginError> {
-        log::debug!("Received request for the value of attribute: {}", id);
-        let value = self.line_handle.get_value()?;
+/// The callback function that is fired when the pin state is read.
+///
+/// # Arguments
+///
+/// * `plugin` - A reference to the struct that contains the plugin's state.
+/// * `cached` - The most recently read or modified value of the attribute.
+fn on_get_pin_state(plugin: &GPIOPlugin, cached: &mut Value) -> Result<Value, GPIOPluginError> {
+    let pin_value = plugin.line_handle.get_value()?;
+    let value = Value::Int(pin_value.try_into()?);
+    *cached = value.clone();
 
-        let value = value.try_into()?;
+    Ok(value)
+}
 
-        Ok(Value::Int(value))
-    }
+/// The callback function that is fired when the pin state is set.
+///
+/// # Arguments
+///
+/// * `plugin` - A reference to the struct that contains the plugin's state.
+/// * `cached` - The most recently read or modified value of the attribute.
+/// * `value` -  The new value of the attribute.
+fn on_set_pin_state(
+    plugin: &GPIOPlugin,
+    cached: &mut Value,
+    value: &Value,
+) -> Result<(), GPIOPluginError> {
+    let pin_value = if let Value::Int(pin_value) = value {
+        pin_value.to_owned().try_into()?
+    } else {
+        unreachable!()
+    };
 
-    fn attribute_set_value(&mut self, id: usize, value: &Value) -> Result<(), GPIOPluginError> {
-        log::debug!("Received request to set the value of attribute: {}", id);
-        let value = match value {
-            Value::Int(value) => value.to_owned(),
-            _ => {
-                return Err(GPIOPluginError {
-                    error_code: ATTRIBUTE_TYPE_MISMATCH,
-                    side: None,
-                })
-            }
-        }
-        .try_into()?;
+    plugin.line_handle.set_value(pin_value)?;
 
-        self.line_handle.set_value(value)?;
-
-        Ok(())
-    }
+    *cached = value.clone();
+    Ok(())
 }
 
 declare_plugin!(GPIOPlugin, GPIOPluginError);

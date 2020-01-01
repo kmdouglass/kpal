@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2019-12-29
+## [Unreleased] - 2020-01-02
 ### Added
 - A Dockerfile was added at
   [resources/docker/rust-linux-x86_64/Dockerfile](resources/docker/rust-linux-x86_64/Dockerfile)
@@ -25,6 +25,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   plugin libraries. Previously, the function signature was hard-coded.
 - A new macro called `declare_plugin` was added to the `kpal-plugin` library. This macro takes care
   of initializing the FFI code for plugins so that plugin authors do not have to.
+- Callbacks were added to the `kpal-plugin` library, making it easier to isolate the parts of the
+  plugin code that communicate with the hardware.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.
@@ -36,6 +38,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `web::errors` submodule.
 - The `Peripheral` in the `kpal-plugin` crate was renamed to `PluginData` to avoid confusion with
   the `Peripheral` of the user API and to emphasize that it holds the state of a plugin.
+- Many methods in the `PluginAPI` trait now have default implementations so that they are no longer
+  required in a plugin library.
 
 ### Fixed
 - The integration and unit tests no longer look in only the `target/debug` directory for test
