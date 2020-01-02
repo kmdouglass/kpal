@@ -1,6 +1,6 @@
 //! Structures that provide error information to clients of the plugin library.
 
-pub static ERRORS: [&[u8]; 9] = [
+pub static ERRORS: [&[u8]; 11] = [
     // 0 PLUGIN_OK
     b"Plugin OK\0",
     // 1 UNDEFINED_ERR
@@ -19,6 +19,10 @@ pub static ERRORS: [&[u8]; 9] = [
     b"Could not convert numeric value into a different type\0",
     // 8 NULL_PTR_ERR
     b"The plugin encountered a null pointer\0",
+    // 9 CALLBACK_ERR
+    b"The plugin attribute's callback failed\0",
+    // 10 UPDATE_CACHED_VALUE_ERR
+    b"Could not update plugin attribute's cached value\0",
 ];
 
 pub mod constants {
@@ -34,4 +38,6 @@ pub mod constants {
     pub const IO_ERR: c_int = 6;
     pub const NUMERIC_CONVERSION_ERR: c_int = 7;
     pub const NULL_PTR_ERR: c_int = 8;
+    pub const CALLBACK_ERR: c_int = 9;
+    pub const UPDATE_CACHED_VALUE_ERR: c_int = 10;
 }

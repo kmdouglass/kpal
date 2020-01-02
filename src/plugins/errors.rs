@@ -7,6 +7,7 @@ use std::{
     sync::{MutexGuard, PoisonError, RwLockWriteGuard},
 };
 
+use crate::models::AttributeError;
 use crate::{init::transmitters::Transmitters, models::Library};
 
 /// Contains information for clients about errors that occur while communicating with a plugin.
@@ -30,6 +31,15 @@ impl Error for PluginError {}
 impl fmt::Display for PluginError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "PluginError: {:?}", self)
+    }
+}
+
+impl From<AttributeError> for PluginError {
+    fn from(_error: AttributeError) -> Self {
+        PluginError {
+            body: "Could not create attribute from value".to_string(),
+            http_status_code: 500,
+        }
     }
 }
 

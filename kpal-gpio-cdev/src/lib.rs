@@ -63,10 +63,9 @@ impl PluginAPI<GPIOPluginError> for GPIOPlugin {
 ///
 /// * `plugin` - A reference to the struct that contains the plugin's state.
 /// * `cached` - The most recently read or modified value of the attribute.
-fn on_get_pin_state(plugin: &GPIOPlugin, cached: &mut Value) -> Result<Value, GPIOPluginError> {
+fn on_get_pin_state(plugin: &GPIOPlugin, _cached: &Value) -> Result<Value, GPIOPluginError> {
     let pin_value = plugin.line_handle.get_value()?;
     let value = Value::Int(pin_value.try_into()?);
-    *cached = value.clone();
 
     Ok(value)
 }
@@ -77,13 +76,13 @@ fn on_get_pin_state(plugin: &GPIOPlugin, cached: &mut Value) -> Result<Value, GP
 ///
 /// * `plugin` - A reference to the struct that contains the plugin's state.
 /// * `cached` - The most recently read or modified value of the attribute.
-/// * `value` -  The new value of the attribute.
+/// * `val` -  The new value of the attribute.
 fn on_set_pin_state(
     plugin: &GPIOPlugin,
-    cached: &mut Value,
-    value: &Value,
+    _cached: &Value,
+    val: &Val,
 ) -> Result<(), GPIOPluginError> {
-    let pin_value = if let Value::Int(pin_value) = value {
+    let pin_value = if let Val::Int(pin_value) = val {
         pin_value.to_owned().try_into()?
     } else {
         unreachable!()
@@ -91,7 +90,6 @@ fn on_set_pin_state(
 
     plugin.line_handle.set_value(pin_value)?;
 
-    *cached = value.clone();
     Ok(())
 }
 

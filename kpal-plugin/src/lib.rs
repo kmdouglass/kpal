@@ -10,11 +10,11 @@ use std::{
     cell::{Ref, RefCell},
     cmp::PartialEq,
     error::Error,
-    ffi::CString,
-    fmt,
+    ffi::{CStr, CString, FromBytesWithNulError},
+    fmt, slice,
 };
 
-use libc::{c_double, c_int, c_long, c_uchar, size_t};
+use libc::{c_double, c_int, c_uchar, size_t};
 
 pub use errors::constants;
 pub use errors::ERRORS;
@@ -57,7 +57,7 @@ where
     /// # Arguments
     ///
     /// * `id` - the numeric ID of the attribute
-    fn attribute_value(&self, id: usize) -> Result<Value, E> {
+    fn attribute_value(&self, id: usize) -> Result<Val, E> {
         log::debug!("Received request for the value of attribute: {}", id);
         let attributes = self.attributes();
         let mut attributes = attributes.borrow_mut();
@@ -66,12 +66,20 @@ where
             .ok_or_else(|| E::new(constants::ATTRIBUTE_DOES_NOT_EXIST))?;
 
         let get = match attribute.callbacks {
-            Callbacks::Constant => return Ok(attribute.value.clone()),
+            Callbacks::Constant => return Ok(attribute.value.as_val()),
             Callbacks::Get(get) => get,
             Callbacks::GetAndSet(get, _) => get,
         };
 
-        get(&self, &mut attribute.value)
+        let value = get(&self, &attribute.value).map_err(|err| {
+            log::error!("Callback error {{ id: {:?}, error: {:?} }}", id, err);
+            E::new(constants::CALLBACK_ERR)
+        })?;
+
+        // Update the attribute's cached value.
+        attribute.value = value;
+
+        Ok(attribute.value.as_val())
     }
 
     /// Sets the value of the attribute given by the id.
@@ -82,10 +90,9 @@ where
     /// # Arguments
     ///
     /// * `id` - the numeric ID of the attribute
-    /// * `value` - a reference to a value
-    fn attribute_set_value(&self, id: usize, value: &Value) -> Result<(), E> {
+    /// * `val` - a reference to a Val instance
+    fn attribute_set_value(&self, id: usize, val: &Val) -> Result<(), E> {
         log::debug!("Received request to set the value of attribute: {}", id);
-        use Value::*;
         let attributes = self.attributes();
         let mut attributes = attributes.borrow_mut();
         let attribute = attributes
@@ -97,10 +104,30 @@ where
             _ => return Err(E::new(constants::ATTRIBUTE_IS_NOT_SETTABLE)),
         };
 
-        match (&attribute.value, &value) {
-            (Int(_), Int(_)) | (Float(_), Float(_)) => set(&self, &mut attribute.value, value),
+        // This MUST be updated each time a new variant is added to the Value and Val enums.
+        let result = match (&attribute.value, &val) {
+            (Value::Int(_), Val::Int(_))
+            | (Value::Double(_), Val::Double(_))
+            | (Value::String(_), Val::String(_, _)) => set(&self, &attribute.value, val),
             _ => Err(E::new(constants::ATTRIBUTE_TYPE_MISMATCH)),
-        }
+        };
+
+        result.map_err(|err| {
+            log::error!("Callback error {{ id: {:?}, error: {:?} }}", id, err);
+            E::new(constants::CALLBACK_ERR)
+        })?;
+
+        // Update the attribute's cached value.
+        attribute.value = val.to_value().map_err(|err| {
+            log::error!(
+                "Could not update plugin attribute's cached value: {{ id: {:?}, error: {:?} }}",
+                id,
+                err
+            );
+            E::new(constants::UPDATE_CACHED_VALUE_ERR)
+        })?;
+
+        Ok(())
     }
 }
 
@@ -183,18 +210,12 @@ pub struct VTable {
     ) -> c_int,
 
     /// Writes the value of an attribute to a Value instance that is provided by the caller.
-    pub attribute_value: unsafe extern "C" fn(
-        plugin_data: *const PluginData,
-        id: size_t,
-        value: *mut Value,
-    ) -> c_int,
+    pub attribute_value:
+        unsafe extern "C" fn(plugin_data: *const PluginData, id: size_t, value: *mut Val) -> c_int,
 
     /// Sets the value of an attribute.
-    pub set_attribute_value: unsafe extern "C" fn(
-        plugin_data: *mut PluginData,
-        id: size_t,
-        value: *const Value,
-    ) -> c_int,
+    pub set_attribute_value:
+        unsafe extern "C" fn(plugin_data: *mut PluginData, id: size_t, value: *const Val) -> c_int,
 }
 
 /// The type signature of the function that returns a new plugin instance.
@@ -223,14 +244,68 @@ pub struct Attribute<T, E: Error + PluginError> {
     pub callbacks: Callbacks<T, E>,
 }
 
-/// The value of an attribute.
+/// An owned value of an attribute.
 ///
-/// Currently only integer and floating point (decimal) values are supported.
+/// Unlike the `Val` enum, these are intended to be owned by an instance of a PluginData struct and
+/// do not pass through the FFI.
 #[derive(Clone, Debug, PartialEq)]
 #[repr(C)]
 pub enum Value {
-    Int(c_long),
-    Float(c_double),
+    Int(c_int),
+    Double(c_double),
+    String(CString),
+}
+
+impl Value {
+    /// Returns a reference type to a Value.
+    ///
+    /// as_val creates a new Val instance from a Value. Value variants that contain datatypes that
+    /// implement Copy are copied into the new Val instance. For complex datatypes that are not
+    /// Copy, pointers to the data are embedded inside the Val instance instead.
+    ///
+    /// This method is used to generate datatypes that represent attribute values and that may pass
+    /// through the FFI.
+    pub fn as_val(&self) -> Val {
+        match self {
+            Value::Int(value) => Val::Int(*value),
+            Value::Double(value) => Val::Double(*value),
+            Value::String(value) => {
+                let slice = value.as_bytes_with_nul();
+                Val::String(slice.as_ptr(), slice.len())
+            }
+        }
+    }
+}
+
+/// A wrapper type for transporting Values through the plugin API.
+///
+/// Unlike the `Value` enum, this type is intended to be sent through the FFI. Because of this, the
+/// enum variants can only contain C-compatible datatypes.
+#[derive(Clone, Debug, PartialEq)]
+#[repr(C)]
+pub enum Val {
+    Int(c_int),
+    Double(c_double),
+    String(*const c_uchar, size_t),
+}
+
+impl Val {
+    /// Clones the data inside a Val into a new Value type.
+    ///
+    /// This method is used to convert Vals, which pass through the FFI, into owned Value
+    /// datatypes. Wrapped data that is not Copy is necessarily cloned when the new Value instance
+    /// is created.
+    pub fn to_value(&self) -> Result<Value, ValueConversionError> {
+        match self {
+            Val::Int(value) => Ok(Value::Int(*value)),
+            Val::Double(value) => Ok(Value::Double(*value)),
+            Val::String(p_value, length) => {
+                let slice = unsafe { slice::from_raw_parts(*p_value, *length) };
+                let c_string = CStr::from_bytes_with_nul(slice)?.to_owned();
+                Ok(Value::String(c_string))
+            }
+        }
+    }
 }
 
 /// Callback functions that communicate with the hardware when an attribute is read or set.
@@ -243,10 +318,10 @@ pub enum Value {
 #[repr(C)]
 pub enum Callbacks<T, E: Error + PluginError> {
     Constant,
-    Get(fn(plugin: &T, cached: &mut Value) -> Result<Value, E>),
+    Get(fn(plugin: &T, cached: &Value) -> Result<Value, E>),
     GetAndSet(
-        fn(plugin: &T, cached: &mut Value) -> Result<Value, E>,
-        fn(plugin: &T, cached: &mut Value, value: &Value) -> Result<(), E>,
+        fn(plugin: &T, cached: &Value) -> Result<Value, E>,
+        fn(plugin: &T, cached: &Value, value: &Val) -> Result<(), E>,
     ),
 }
 
@@ -322,4 +397,28 @@ macro_rules! declare_plugin {
             PLUGIN_OK
         }
     };
+}
+
+/// An error type that represents a failure to convert a Val to a Value.
+#[derive(Debug)]
+pub struct ValueConversionError {
+    side: FromBytesWithNulError,
+}
+
+impl Error for ValueConversionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.side)
+    }
+}
+
+impl fmt::Display for ValueConversionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PluginError: {:?}", self)
+    }
+}
+
+impl From<FromBytesWithNulError> for ValueConversionError {
+    fn from(error: FromBytesWithNulError) -> Self {
+        ValueConversionError { side: error }
+    }
 }

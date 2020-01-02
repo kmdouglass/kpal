@@ -1,21 +1,20 @@
-use std::env;
-use std::error::Error;
-use std::ffi::OsString;
-use std::fmt;
-use std::fs;
-use std::io;
-use std::panic;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
-use std::thread;
-use std::time::Duration;
+use std::{
+    env,
+    error::Error,
+    ffi::OsString,
+    fmt, fs, io, panic,
+    path::{Path, PathBuf},
+    process::{Child, Command},
+    thread,
+    time::Duration,
+};
 
-use env_logger;
-use log;
-use reqwest;
-use serde::Serialize;
-use tempfile::{tempdir, TempDir};
-use url::Url;
+use {
+    env_logger, log, reqwest,
+    serde::Serialize,
+    tempfile::{tempdir, TempDir},
+    url::Url,
+};
 
 const LIBRARY_FILENAME: &str = "libbasic-plugin.so";
 
@@ -29,9 +28,13 @@ fn test_user_api() {
         name: "foo",
         library_id: 0,
     };
-    let patch_data = PatchData {
-        variant: "float",
+    let patch_attr_0 = PatchDouble {
+        variant: "double",
         value: 42.0,
+    };
+    let patch_attr_3 = PatchString {
+        variant: "string",
+        value: "foobarbaz",
     };
     let cases: Vec<Case> = vec![
         ("/api/v0/libraries", Http::Get),
@@ -43,7 +46,11 @@ fn test_user_api() {
         ("/api/v0/peripherals/0/attributes/0", Http::Get),
         (
             "/api/v0/peripherals/0/attributes/0",
-            Http::Patch(patch_data),
+            Http::PatchDouble(patch_attr_0),
+        ),
+        (
+            "/api/v0/peripherals/0/attributes/3",
+            Http::PatchString(patch_attr_3),
         ),
     ];
     let result = {
@@ -80,7 +87,12 @@ fn subtest_user_api((route, http): &Case, base: &Url) {
             .json(&data)
             .send()
             .expect("Request failed"),
-        Http::Patch(data) => client
+        Http::PatchDouble(data) => client
+            .patch(base.as_str())
+            .json(&data)
+            .send()
+            .expect("Request failed"),
+        Http::PatchString(data) => client
             .patch(base.as_str())
             .json(&data)
             .send()
@@ -99,7 +111,8 @@ type Case = (&'static str, Http);
 enum Http {
     Get,
     Post(PostData),
-    Patch(PatchData),
+    PatchDouble(PatchDouble),
+    PatchString(PatchString),
 }
 
 /// Post data to create a new peripheral.
@@ -111,9 +124,16 @@ struct PostData {
 
 /// Patch data to update an attribute value.
 #[derive(Debug, Serialize)]
-struct PatchData {
+struct PatchDouble {
     variant: &'static str,
     value: f64,
+}
+
+/// Patch data to update an attribute value.
+#[derive(Debug, Serialize)]
+struct PatchString {
+    variant: &'static str,
+    value: &'static str,
 }
 
 /// Data that specifies the context within which the test is run.

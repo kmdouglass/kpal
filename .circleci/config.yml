@@ -36,8 +36,8 @@ commands:
       - checkout
       - restore_cache:
           keys:
-            - v1-build-cache-{{ checksum "Cargo.lock" }}
-            - v1-build-cache-
+            - v2-build-cache-{{ checksum "Cargo.lock" }}
+            - v2-build-cache-
       - run:
           name: Check code formatting
           command: |
@@ -59,7 +59,7 @@ commands:
     description: Save the build cache
     steps:
       - save_cache:
-          key: v1-build-cache-{{ checksum "Cargo.lock" }}
+          key: v2-build-cache-{{ checksum "Cargo.lock" }}
           paths:
             - "~/.cargo"
             - "./target"
@@ -224,8 +224,8 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - v1-build-cache-{{ checksum "Cargo.lock" }}
-            - v1-build-cache-
+            - v2-build-cache-{{ checksum "Cargo.lock" }}
+            - v2-build-cache-
       - run:
           name: Login to crates.io
           command: cargo login ${CRATESIO_TOKEN}
@@ -276,8 +276,8 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - v1-build-cache-{{ checksum "Cargo.lock" }}
-            - v1-build-cache-
+            - v2-build-cache-{{ checksum "Cargo.lock" }}
+            - v2-build-cache-
       - run:
           name: Login to crates.io
           command: cargo login ${CRATESIO_TOKEN}

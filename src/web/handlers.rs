@@ -3,7 +3,6 @@
 use std::sync::mpsc::channel;
 use std::sync::{Arc, RwLock};
 
-use kpal_plugin::Value as PluginValue;
 use rouille::input::json::json_input;
 use rouille::{Request, Response};
 
@@ -155,7 +154,6 @@ pub fn patch_peripheral_attribute(
         .lock()?;
 
     let (tx, rx) = channel();
-    let value: PluginValue = value.into();
     let msg = Message::PatchPeripheralAttribute(attr_id, value, tx);
     ptx.send(msg)?;
 
