@@ -6,7 +6,7 @@ use std::ptr::null;
 use libc::{c_int, c_uchar, size_t};
 
 use crate::constants::*;
-use crate::{copy_string, PluginAPI, PluginData, PluginError, Value, ERRORS};
+use crate::{copy_string, PluginAPI, PluginData, PluginError, Val, ERRORS};
 
 /// Frees the memory associated with the plugin's data.
 ///
@@ -93,7 +93,7 @@ pub unsafe extern "C" fn attribute_name<T: PluginAPI<E>, E: PluginError + 'stati
 pub unsafe extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError + 'static>(
     plugin_data: *const PluginData,
     id: size_t,
-    value: *mut Value,
+    value: *mut Val,
 ) -> c_int {
     if plugin_data.is_null() {
         log::error!("plugin_data pointer is null");
@@ -129,12 +129,12 @@ pub unsafe extern "C" fn attribute_value<T: PluginAPI<E>, E: PluginError + 'stat
 ///
 /// * `plugin_data` - A pointer to a PluginData struct
 /// * `id` - The id of the attribute
-/// * `value` - A pointer to a Value enum. The enum is provided by this function's caller and will
-/// be copied.
+/// * `value` - A pointer to a Val enum. The enum is provided by this function's caller and will be
+/// copied.
 pub unsafe extern "C" fn set_attribute_value<T: PluginAPI<E>, E: PluginError + 'static>(
     plugin_data: *mut PluginData,
     id: size_t,
-    value: *const Value,
+    value: *const Val,
 ) -> c_int {
     if plugin_data.is_null() {
         log::error!("plugin_data pointer is null");

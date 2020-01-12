@@ -22,7 +22,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH}, // These are used to generate a random number for an example.
 };
 
-use libc::{c_int, c_long};
+use libc::c_int;
 
 // Import the tools provided by the plugin library.
 use kpal_plugin::{constants::*, *};
@@ -51,7 +51,7 @@ impl PluginAPI<BasicError> for Basic {
             attributes: RefCell::new(vec![
                 Attribute {
                     name: CString::new("x").unwrap(),
-                    value: Value::Float(0.0),
+                    value: Value::Double(0.0),
                     // Settable attributes should use the GetAndSet variant.
                     callbacks: Callbacks::GetAndSet(on_get_x, on_set_x),
                 },
@@ -68,6 +68,14 @@ impl PluginAPI<BasicError> for Basic {
                     // Attributes that are constant should use the Constant variant of the
                     // Callbacks enum. They are not settable and will always return the same value.
                     callbacks: Callbacks::Constant,
+                },
+                Attribute {
+                    name: CString::new("msg").unwrap(),
+                    // Values can contain CStrings as well. A CString is ASCII-encoded and ends in
+                    // a null byte.
+                    value: Value::String(CString::new("foobar").unwrap()),
+                    callbacks: Callbacks::GetAndSet(on_get_msg, on_set_msg),
+                    //callbacks: Callbacks::Constant,
                 },
             ]),
         })
@@ -92,18 +100,17 @@ impl PluginAPI<BasicError> for Basic {
 /// * `_plugin` - A reference to the plugin struct. This provides the callback with the plugin's
 /// state.
 /// * `cached` - The most recently read or modified value of the attribute.
-fn on_get_x(_plugin: &Basic, cached: &mut Value) -> Result<Value, BasicError> {
+fn on_get_x(_plugin: &Basic, _cached: &Value) -> Result<Value, BasicError> {
     // Normally, we would communicate with the hardware here to get the value of the
     // attribute. Since this is an example plugin, however, we just print a message to the terminal
     // instead and return the cached value of the attribute.
     //
-    // In a real plugin, you could use the cached argument to cache the attribute's value and avoid
-    // communicating with the hardware if some condition is true. For example, you could store a
-    // boolean value in the plugin struct and, only if it is true, return cached without querying
-    // the hardware.
+    // In a real plugin, you could use the cached argument to avoid communicating with the hardware
+    // if some condition is true. For example, you could store a boolean value in the plugin struct
+    // and, only if it is true, return cached without querying the hardware.
     println!("Getting the value of attribute x");
 
-    Ok(cached.clone())
+    Ok(_cached.clone())
 }
 
 /// Callback function that is fired when the 'x' attribute is set.
@@ -113,12 +120,12 @@ fn on_get_x(_plugin: &Basic, cached: &mut Value) -> Result<Value, BasicError> {
 /// * `_plugin` - A reference to the plugin struct. This provides the callback with the plugin's
 /// state.
 /// * `cached` - The most most recently read or modified value of the attribute.
-/// * `value` - The new value of the attribute.
-fn on_set_x(_plugin: &Basic, cached: &mut Value, value: &Value) -> Result<(), BasicError> {
-    // Like in the callback above, in this example plugin we only update the cached value with the
-    // new one instead of communicating with any real hardware.
+/// * `val` - The new value of the attribute.
+fn on_set_x(_plugin: &Basic, _cached: &Value, _val: &Val) -> Result<(), BasicError> {
+    // Like in the callback above, in this example plugin we only print a line to the console. The
+    // update of the cached value will be taken care of for you.
     println!("Setting the value of attribute x");
-    *cached = value.clone();
+
     Ok(())
 }
 
@@ -132,11 +139,11 @@ fn on_set_x(_plugin: &Basic, cached: &mut Value, value: &Value) -> Result<(), Ba
 /// * `_plugin` - A reference to the plugin struct. This provides the callback with the plugin's
 /// state.
 /// * `cached` - The most most recently read or modified value of the attribute.
-fn on_get_y(_plugin: &Basic, cached: &mut Value) -> Result<Value, BasicError> {
+fn on_get_y(_plugin: &Basic, _cached: &Value) -> Result<Value, BasicError> {
     println!("Getting the value of attribute y");
     // This simulates a random value from a sensor; its implementation does not matter for the
     // purpose of this example.
-    let rand_int: c_long = SystemTime::now()
+    let rand_int: c_int = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .subsec_nanos()
@@ -145,10 +152,34 @@ fn on_get_y(_plugin: &Basic, cached: &mut Value) -> Result<Value, BasicError> {
 
     let value = Value::Int(rand_int);
 
-    // Update the attribute's cached value
-    *cached = value.clone();
-
     Ok(value)
+}
+
+/// Getting String attributes works just like those with numeric values.
+///
+/// # Arguments
+///
+/// * `_plugin` - A reference to the plugin struct. This provides the callback with the plugin's
+/// state.
+/// * `cached` - The most most recently read or modified value of the attribute.
+fn on_get_msg(_plugin: &Basic, _cached: &Value) -> Result<Value, BasicError> {
+    println!("Getting the value of attribute msg");
+
+    Ok(_cached.clone())
+}
+
+/// Setting String attributes works just like those with numeric values.
+///
+/// # Arguments
+///
+/// * `_plugin` - A reference to the plugin struct. This provides the callback with the plugin's
+/// state.
+/// * `cached` - The most most recently read or modified value of the attribute.
+/// * `val` - The new value of the attribute.
+fn on_set_msg(_plugin: &Basic, _cached: &Value, _val: &Val) -> Result<(), BasicError> {
+    println!("Setting the value of attribute msg");
+
+    Ok(())
 }
 
 /// The plugin's error type.
@@ -242,26 +273,26 @@ mod tests {
 
     #[test]
     fn set_attribute_value() {
-        let mut plugin = Basic::new().unwrap();
-        let new_value = Value::Float(3.14);
+        let plugin = Basic::new().unwrap();
+        let new_val = Val::Double(3.14);
 
         // Test setting each attribute to the new value
-        plugin.attribute_set_value(0, &new_value).unwrap();
+        plugin.attribute_set_value(0, &new_val).unwrap();
         let attributes = plugin.attributes.borrow();
-        let actual = &attributes[0].value;
+        let actual = &attributes[0].value.as_val();
         assert_eq!(
-            new_value, *actual,
+            new_val, *actual,
             "Expected attribute value to be {:?} but it was {:?}",
-            new_value, *actual
+            new_val, *actual
         )
     }
 
     #[test]
     fn set_attribute_wrong_variant() {
-        let mut plugin = Basic::new().unwrap();
-        let new_value = Value::Float(42.0);
+        let plugin = Basic::new().unwrap();
+        let new_val = Val::Double(42.0);
 
-        let result = plugin.attribute_set_value(1, &new_value);
+        let result = plugin.attribute_set_value(1, &new_val);
         match result {
             Ok(_) => panic!("Expected different value variants."),
             Err(_) => (),

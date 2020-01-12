@@ -1,10 +1,17 @@
-use std::collections::HashMap;
+mod errors;
 
-use libc::{c_double, c_long};
+use std::{
+    collections::HashMap,
+    ffi::{CStr, CString},
+    slice,
+};
+
 use libloading::Library as Dll;
 use serde::{Deserialize, Serialize};
 
-use kpal_plugin::Value as PluginValue;
+use kpal_plugin::Val as PluginValue;
+
+pub use errors::*;
 
 pub trait Model {
     fn id(&self) -> usize;
@@ -16,17 +23,16 @@ pub trait Model {
 #[serde(tag = "variant")]
 pub enum Attribute {
     #[serde(rename(serialize = "integer", deserialize = "integer"))]
-    Int {
-        id: usize,
-        name: String,
-        value: c_long,
-    },
+    Int { id: usize, name: String, value: i32 },
 
-    #[serde(rename(serialize = "float", deserialize = "float"))]
-    Float {
+    #[serde(rename(serialize = "double", deserialize = "double"))]
+    Double { id: usize, name: String, value: f64 },
+
+    #[serde(rename(serialize = "string", deserialize = "string"))]
+    String {
         id: usize,
         name: String,
-        value: c_double,
+        value: String,
     },
 }
 
@@ -34,7 +40,8 @@ impl Attribute {
     pub fn name(&self) -> &str {
         match self {
             Attribute::Int { name, .. } => name,
-            Attribute::Float { name, .. } => name,
+            Attribute::Double { name, .. } => name,
+            Attribute::String { name, .. } => name,
         }
     }
 
@@ -48,10 +55,22 @@ impl Attribute {
     /// * `value` The value to assign to the new attribute
     /// * `id` The numeric ID of the attribute
     /// * `name` The attribute's name
-    pub fn new(value: PluginValue, id: usize, name: String) -> Attribute {
+    pub fn new(
+        value: PluginValue,
+        id: usize,
+        name: String,
+    ) -> Result<Attribute, ValueConversionError> {
         match value {
-            PluginValue::Int(value) => Attribute::Int { id, name, value },
-            PluginValue::Float(value) => Attribute::Float { id, name, value },
+            PluginValue::Int(value) => Ok(Attribute::Int { id, name, value }),
+            PluginValue::Double(value) => Ok(Attribute::Double { id, name, value }),
+            PluginValue::String(p_value, length) => {
+                let value = unsafe {
+                    let slice = slice::from_raw_parts(p_value, length);
+                    let string = CStr::from_bytes_with_nul(slice)?.to_str()?;
+                    string.to_owned()
+                };
+                Ok(Attribute::String { id, name, value })
+            }
         }
     }
 }
@@ -60,7 +79,8 @@ impl Model for Attribute {
     fn id(&self) -> usize {
         match self {
             Attribute::Int { id, .. } => *id,
-            Attribute::Float { id, .. } => *id,
+            Attribute::Double { id, .. } => *id,
+            Attribute::String { id, .. } => *id,
         }
     }
 
@@ -87,12 +107,12 @@ impl PartialEq for Attribute {
                 },
             ) => id1 == id2 && name1 == name2 && value1 == value2,
             (
-                Attribute::Float {
+                Attribute::Double {
                     id: id1,
                     name: name1,
                     value: value1,
                 },
-                Attribute::Float {
+                Attribute::Double {
                     id: id2,
                     name: name2,
                     value: value2,
@@ -111,16 +131,22 @@ impl PartialEq for Attribute {
 /// state and values understood by the plugin API.
 pub enum Value {
     #[serde(rename(serialize = "integer", deserialize = "integer"))]
-    Int { value: c_long },
-    #[serde(rename(serialize = "float", deserialize = "float"))]
-    Float { value: c_double },
+    Int { value: i32 },
+    #[serde(rename(serialize = "double", deserialize = "double"))]
+    Double { value: f64 },
+    #[serde(rename(serialize = "string", deserialize = "string"))]
+    String { value: CString },
 }
 
-impl Into<PluginValue> for Value {
-    fn into(self) -> PluginValue {
+impl Value {
+    pub fn as_val(&self) -> PluginValue {
         match self {
-            Value::Int { value } => PluginValue::Int(value),
-            Value::Float { value } => PluginValue::Float(value),
+            Value::Int { value } => PluginValue::Int(*value),
+            Value::Double { value } => PluginValue::Double(*value),
+            Value::String { value } => {
+                let slice = value.as_bytes_with_nul();
+                PluginValue::String(slice.as_ptr(), slice.len())
+            }
         }
     }
 }
@@ -202,9 +228,14 @@ impl Peripheral {
         self.attributes = attributes;
     }
 
-    pub fn set_attribute_from_value(&mut self, id: usize, value: PluginValue) {
+    pub fn set_attribute_from_value(
+        &mut self,
+        id: usize,
+        value: PluginValue,
+    ) -> Result<(), AttributeError> {
         let attribute = self.attributes.get_mut(id).unwrap();
-        *attribute = Attribute::new(value, id, attribute.name().to_owned());
+        *attribute = Attribute::new(value, id, attribute.name().to_owned())?;
+        Ok(())
     }
 
     pub fn set_attribute_links(&mut self) {
@@ -242,19 +273,19 @@ mod tests {
 
     use std::f64::consts::PI;
 
-    use kpal_plugin::Value as PluginValue;
+    use kpal_plugin::Val as PluginValue;
 
     #[test]
     fn test_attribute_from() {
         let context = set_up();
         let values = vec![
             PluginValue::Int(context.int_value),
-            PluginValue::Float(context.float_value),
+            PluginValue::Double(context.float_value),
         ];
         let cases = values.into_iter().zip(context.attributes);
 
         for (value, attr) in cases {
-            let converted_attr = Attribute::new(value, context.id, context.name.clone());
+            let converted_attr = Attribute::new(value, context.id, context.name.clone()).unwrap();
             assert_eq!(attr, converted_attr);
         }
     }
@@ -320,7 +351,7 @@ mod tests {
     #[test]
     fn test_peripheral_set_attribute() {
         let mut context = set_up();
-        let new_attr = Attribute::Float {
+        let new_attr = Attribute::Double {
             id: context.id,
             name: context.name,
             value: PI,
@@ -335,7 +366,7 @@ mod tests {
     #[test]
     fn test_peripheral_set_attributes() {
         let mut context = set_up();
-        let new_attr = Attribute::Float {
+        let new_attr = Attribute::Double {
             id: context.id,
             name: context.name.clone(),
             value: PI,
@@ -354,8 +385,8 @@ mod tests {
     #[test]
     fn test_peripheral_set_attribute_from_value() {
         let mut context = set_up();
-        let new_value = PluginValue::Float(PI);
-        let new_attr = Attribute::Float {
+        let new_value = PluginValue::Double(PI);
+        let new_attr = Attribute::Double {
             id: context.id,
             name: context.name.clone(),
             value: PI,
@@ -363,15 +394,18 @@ mod tests {
 
         assert_ne!(context.peripheral.attributes[0], new_attr);
 
-        context.peripheral.set_attribute_from_value(0, new_value);
+        context
+            .peripheral
+            .set_attribute_from_value(0, new_value)
+            .unwrap();
         assert_eq!(context.peripheral.attributes[0], new_attr);
     }
 
     struct Context {
         attributes: Vec<Attribute>,
-        float_value: c_double,
+        float_value: f64,
         id: usize,
-        int_value: c_long,
+        int_value: i32,
         library_id: usize,
         name: String,
         peripheral: Peripheral,
@@ -386,7 +420,7 @@ mod tests {
                 name: name.clone(),
                 value: int_value,
             },
-            Attribute::Float {
+            Attribute::Double {
                 id: id,
                 name: name.clone(),
                 value: float_value,

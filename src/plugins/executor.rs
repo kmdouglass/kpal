@@ -8,7 +8,7 @@ use {
     memchr::memchr,
 };
 
-use kpal_plugin::{constants::*, Value};
+use kpal_plugin::{constants::*, Val};
 
 use super::{
     errors::{ExecutorError, NameError, PluginError, SetValueError, ValueError},
@@ -146,9 +146,9 @@ impl Executor {
     ///
     /// * `id` - The attribute's unique ID
     /// * `value` - A reference to a value instance into which the attribute's value will be copied
-    pub fn attribute_value(&self, id: size_t, value: &mut Value) -> Result<(), ValueError> {
+    pub fn attribute_value(&self, id: size_t, value: &mut Val) -> Result<(), ValueError> {
         let result = unsafe {
-            (self.plugin.vtable.attribute_value)(self.plugin.plugin_data, id, value as *mut Value)
+            (self.plugin.vtable.attribute_value)(self.plugin.plugin_data, id, value as *mut Val)
         };
 
         if result == PLUGIN_OK {
@@ -180,12 +180,12 @@ impl Executor {
     ///
     /// * `id` - The attribute's unique ID
     /// * `value` - A reference to a value instance that will be copied into the plugin
-    pub fn set_attribute_value(&self, id: size_t, value: &Value) -> Result<(), SetValueError> {
+    pub fn set_attribute_value(&self, id: size_t, value: &Val) -> Result<(), SetValueError> {
         let result = unsafe {
             (self.plugin.vtable.set_attribute_value)(
                 self.plugin.plugin_data,
                 id,
-                value as *const Value,
+                value as *const Val,
             )
         };
 
@@ -243,7 +243,7 @@ impl Executor {
     pub fn init_attributes(&mut self) {
         log::info!("Getting attributes for peripheral {}", self.peripheral.id());
 
-        let mut value = Value::Int(0);
+        let mut value = Val::Int(0);
         let mut index = 0;
         let mut attr: Vec<Attribute> = Vec::new();
 
@@ -270,7 +270,15 @@ impl Executor {
                 },
             };
 
-            attr.push(Attribute::new(value.clone(), index, name));
+            let new_attr = match Attribute::new(value.clone(), index, name) {
+                Ok(new_attr) => new_attr,
+                Err(err) => {
+                    log::error!("Could not create new attribute: {:?}", err);
+                    index += 1;
+                    continue;
+                }
+            };
+            attr.push(new_attr);
 
             index += 1;
         }
@@ -288,12 +296,12 @@ mod tests {
 
     use libc::{c_int, c_uchar, size_t};
 
-    use kpal_plugin::{Plugin, PluginData, VTable, Value};
+    use kpal_plugin::{Plugin, PluginData, VTable, Val};
 
     use crate::models::Peripheral as ModelPeripheral;
 
     type AttributeName = extern "C" fn(*const PluginData, size_t, *mut c_uchar, size_t) -> c_int;
-    type AttributeValue = extern "C" fn(*const PluginData, size_t, *mut Value) -> c_int;
+    type AttributeValue = extern "C" fn(*const PluginData, size_t, *mut Val) -> c_int;
 
     #[test]
     fn test_error_message() {
@@ -348,7 +356,7 @@ mod tests {
         ];
 
         let mut executor: Executor;
-        let mut value = Value::Int(0);
+        let mut value = Val::Int(0);
         let mut result: Result<(), ValueError>;
         for (expected, case) in cases {
             plugin.vtable.attribute_value = case;
@@ -430,19 +438,15 @@ mod tests {
             ATTRIBUTE_DOES_NOT_EXIST
         }
     }
-    extern "C" fn def_attribute_value(
-        _: *const PluginData,
-        id: size_t,
-        value: *mut Value,
-    ) -> c_int {
+    extern "C" fn def_attribute_value(_: *const PluginData, id: size_t, value: *mut Val) -> c_int {
         if id == 0 {
-            unsafe { *value = Value::Int(42) };
+            unsafe { *value = Val::Int(42) };
             PLUGIN_OK
         } else {
             ATTRIBUTE_DOES_NOT_EXIST
         }
     }
-    extern "C" fn def_set_attribute_value(_: *mut PluginData, _: size_t, _: *const Value) -> c_int {
+    extern "C" fn def_set_attribute_value(_: *mut PluginData, _: size_t, _: *const Val) -> c_int {
         0
     }
 
@@ -471,17 +475,17 @@ mod tests {
     ) -> c_int {
         999
     }
-    extern "C" fn attribute_value_ok(_: *const PluginData, _: size_t, _: *mut Value) -> c_int {
+    extern "C" fn attribute_value_ok(_: *const PluginData, _: size_t, _: *mut Val) -> c_int {
         PLUGIN_OK
     }
     extern "C" fn attribute_value_does_not_exist(
         _: *const PluginData,
         _: size_t,
-        _: *mut Value,
+        _: *mut Val,
     ) -> c_int {
         ATTRIBUTE_DOES_NOT_EXIST
     }
-    extern "C" fn attribute_value_failure(_: *const PluginData, _: size_t, _: *mut Value) -> c_int {
+    extern "C" fn attribute_value_failure(_: *const PluginData, _: size_t, _: *mut Val) -> c_int {
         999
     }
 }

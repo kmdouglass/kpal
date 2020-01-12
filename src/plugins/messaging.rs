@@ -2,13 +2,12 @@
 
 use std::{fmt::Debug, sync::mpsc::Receiver as Recv, sync::mpsc::Sender};
 
-use kpal_plugin::Value;
+use kpal_plugin::Val as PluginValue;
 use log;
 
 use super::{Executor, PluginError};
 
-use crate::models::Model;
-use crate::models::{Attribute, Peripheral};
+use crate::models::{Attribute, Model, Peripheral, Value};
 
 /// Represents a single receiver that is owned by a peripheral.
 pub type Receiver = Recv<Message>;
@@ -63,6 +62,7 @@ impl Message {
             }
 
             Message::PatchPeripheralAttribute(id, value, tx) => {
+                let value: PluginValue = value.as_val();
                 let result = set_attribute_value_wrapper(ex, *id, value);
 
                 log_and_send(tx.clone(), result, ex.peripheral.id());
@@ -81,7 +81,7 @@ impl Message {
 /// * `executor` - A reference to the current executor instance
 /// * `id` - The id of the attribute to fetch
 fn attribute_value_wrapper(executor: &mut Executor, id: usize) -> Result<Attribute, PluginError> {
-    let mut value = Value::Int(0);
+    let mut value = PluginValue::Int(0);
     executor
         .attribute_value(id, &mut value)
         .map(|_| {
@@ -90,14 +90,15 @@ fn attribute_value_wrapper(executor: &mut Executor, id: usize) -> Result<Attribu
                 value,
                 executor.peripheral.id(),
             );
-            executor.peripheral.set_attribute_from_value(id, value);
-            let attr = &executor.peripheral.attributes()[id];
-            attr.clone()
         })
         .map_err(|e| {
             log::error!("Message handler error: {:?}", e);
             PluginError::from(e)
-        })
+        })?;
+
+    executor.peripheral.set_attribute_from_value(id, value)?;
+    let attr = &executor.peripheral.attributes()[id];
+    Ok(attr.clone())
 }
 
 /// Wraps the driver's set_attribute_value function.
@@ -113,26 +114,25 @@ fn attribute_value_wrapper(executor: &mut Executor, id: usize) -> Result<Attribu
 fn set_attribute_value_wrapper(
     executor: &mut Executor,
     id: usize,
-    value: &Value,
+    value: PluginValue,
 ) -> Result<Attribute, PluginError> {
     executor
-        .set_attribute_value(id, value)
+        .set_attribute_value(id, &value)
         .map(|_| {
             log::debug!(
                 "Set value {:?} on peripheral {}",
                 value,
                 executor.peripheral.id(),
             );
-            executor
-                .peripheral
-                .set_attribute_from_value(id, value.clone());
-            let attr = &executor.peripheral.attributes()[id];
-            attr.clone()
         })
         .map_err(|e| {
             log::error!("Message handler error: {:?}", e);
             PluginError::from(e)
-        })
+        })?;
+
+    executor.peripheral.set_attribute_from_value(id, value)?;
+    let attr = &executor.peripheral.attributes()[id];
+    Ok(attr.clone())
 }
 
 /// Sends a response back to the requesting thread.
