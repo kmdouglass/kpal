@@ -27,8 +27,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of initializing the FFI code for plugins so that plugin authors do not have to.
 - Callbacks were added to the `kpal-plugin` library, making it easier to isolate the parts of the
   plugin code that communicate with the hardware.
-- Peripherals may how have attributes that contain any character within the ASCII character set
-  except for the null byte.
+- Peripherals may how have string attributes that contain any character within the ASCII character
+  set except for the null byte.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.
