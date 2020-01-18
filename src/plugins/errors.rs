@@ -7,7 +7,7 @@ use std::{
     sync::{MutexGuard, PoisonError, RwLockWriteGuard},
 };
 
-use crate::models::AttributeError;
+use crate::models::{AttributeError, ValueConversionError};
 use crate::{init::transmitters::Transmitters, models::Library};
 
 /// Contains information for clients about errors that occur while communicating with a plugin.
@@ -34,6 +34,15 @@ impl fmt::Display for PluginError {
     }
 }
 
+impl From<AdvancePhaseError> for PluginError {
+    fn from(_error: AdvancePhaseError) -> Self {
+        PluginError {
+            body: "Could not advance the plugin's lifecycle phase".to_string(),
+            http_status_code: 500,
+        }
+    }
+}
+
 impl From<AttributeError> for PluginError {
     fn from(_error: AttributeError) -> Self {
         PluginError {
@@ -48,6 +57,42 @@ impl From<std::io::Error> for PluginError {
         PluginError {
             body: "Could not get symbol from shared library".to_string(),
             http_status_code: 500,
+        }
+    }
+}
+
+impl From<InitError> for PluginError {
+    fn from(_error: InitError) -> Self {
+        PluginError {
+            body: "Could not initialize peripheral".to_string(),
+            http_status_code: 500,
+        }
+    }
+}
+
+impl From<MergeAttributesError> for PluginError {
+    fn from(error: MergeAttributesError) -> Self {
+        match error {
+            MergeAttributesError::DoesNotExist(msg) => PluginError {
+                body: msg,
+                http_status_code: 404,
+            },
+            MergeAttributesError::Failure(msg) => PluginError {
+                body: msg,
+                http_status_code: 500,
+            },
+            MergeAttributesError::IsNotPreInit(msg) => PluginError {
+                body: msg,
+                http_status_code: 422,
+            },
+            MergeAttributesError::UnknownVariant(msg) => PluginError {
+                body: msg,
+                http_status_code: 500,
+            },
+            MergeAttributesError::VariantMismatch(msg) => PluginError {
+                body: msg,
+                http_status_code: 422,
+            },
         }
     }
 }
@@ -73,7 +118,7 @@ impl<'a> From<PoisonError<RwLockWriteGuard<'a, Transmitters>>> for PluginError {
 impl From<std::str::Utf8Error> for PluginError {
     fn from(_: std::str::Utf8Error) -> Self {
         PluginError {
-            body: "Could not convert the plugin's error messago to a UTF8 string".to_string(),
+            body: "Could not convert the plugin's error message to a UTF8 string".to_string(),
             http_status_code: 500,
         }
     }
@@ -90,6 +135,15 @@ impl From<NameError> for PluginError {
                 body: msg,
                 http_status_code: 500,
             },
+        }
+    }
+}
+
+impl From<SyncError> for PluginError {
+    fn from(_: SyncError) -> Self {
+        PluginError {
+            body: "Could not synchronize the plugin to the peripheral data".to_string(),
+            http_status_code: 500,
         }
     }
 }
@@ -120,6 +174,10 @@ impl From<SetValueError> for PluginError {
                 body: msg,
                 http_status_code: 500,
             },
+            SetValueError::NotSettable(msg) => PluginError {
+                body: msg,
+                http_status_code: 422,
+            },
         }
     }
 }
@@ -136,9 +194,94 @@ impl fmt::Display for ExecutorError {
     }
 }
 
+/// Raised when the user-provided attribute values cannot be merged into the defaults.
+#[derive(Debug)]
+pub enum MergeAttributesError {
+    DoesNotExist(String),
+    Failure(String),
+    IsNotPreInit(String),
+    UnknownVariant(String),
+    VariantMismatch(String),
+}
+
+impl Error for MergeAttributesError {}
+
+impl fmt::Display for MergeAttributesError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "MergeAttributesError: {:?}", self)
+    }
+}
+
+impl<'a> From<PoisonError<MutexGuard<'a, Library>>> for MergeAttributesError {
+    fn from(_error: PoisonError<MutexGuard<Library>>) -> Self {
+        MergeAttributesError::Failure("The thread's mutex is poisoned.".to_string())
+    }
+}
+
+/// Represents an error which prevents the advance of the plugin's lifecycle phase.
+#[derive(Debug)]
+pub struct AdvancePhaseError {
+    pub phase: i32,
+}
+
+impl Error for AdvancePhaseError {}
+
+impl fmt::Display for AdvancePhaseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Cannot advance from current phase: {}", self.phase)
+    }
+}
+
+/// /// An error raised during the plugin's initialization routine.
+#[derive(Debug)]
+pub struct InitError {
+    pub msg: String,
+}
+
+impl Error for InitError {}
+
+impl fmt::Display for InitError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "InitError: {:?}", self)
+    }
+}
+
+/// An error raised when a plugin could not by synchronized to a peripheral.
+#[derive(Debug)]
+pub struct SyncError {
+    pub side: Box<dyn Error>,
+}
+
+impl Error for SyncError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&*self.side)
+    }
+}
+
+impl fmt::Display for SyncError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "SyncError: {:?}", self)
+    }
+}
+
+impl From<ValueConversionError> for SyncError {
+    fn from(error: ValueConversionError) -> Self {
+        SyncError {
+            side: Box::new(error),
+        }
+    }
+}
+
 /// Represents the state of a result obtained by fetching a name from an attribute.
 #[derive(Debug, PartialEq)]
 pub enum NameError {
+    DoesNotExist(String),
+    Failure(String),
+}
+
+/// Represents the state of a result obtained by determining whether an attribute is pre-init.
+#[derive(Debug, PartialEq)]
+pub enum PreInitError {
     DoesNotExist(String),
     Failure(String),
 }
@@ -155,4 +298,13 @@ pub enum ValueError {
 pub enum SetValueError {
     DoesNotExist(String),
     Failure(String),
+    NotSettable(String),
+}
+
+impl Error for SetValueError {}
+
+impl fmt::Display for SetValueError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "SetValueError: {:?}", self)
+    }
 }

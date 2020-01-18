@@ -84,6 +84,7 @@ pub fn post_peripherals(
     libs: &[TSLibrary],
     txs: Arc<RwLock<Transmitters>>,
 ) -> Result<Response> {
+    // NOTE Attributes that are required for initialization will come in with the request here.
     let mut periph: Peripheral = json_input(&request)?;
 
     let lib = match libs.get(periph.library_id()) {

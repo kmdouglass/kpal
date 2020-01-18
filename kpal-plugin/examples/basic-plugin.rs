@@ -25,7 +25,7 @@ use std::{
 use libc::c_int;
 
 // Import the tools provided by the plugin library.
-use kpal_plugin::{constants::*, *};
+use kpal_plugin::{error_codes::*, *};
 
 /// The first component of a plugin library is a struct that contains the plugin's data.
 ///
@@ -45,40 +45,62 @@ struct Basic {
 // Plugins implement the PluginAPI trait. They take a custom error type as a type parameter that is
 // also provided by the library (see below).
 impl PluginAPI<BasicError> for Basic {
-    /// Returns a new instance of the plugin.
+    /// Returns a new instance of the plugin. No initialization of the hardware is performed.
     fn new() -> Result<Basic, BasicError> {
         Ok(Basic {
-            attributes: RefCell::new(vec![
-                Attribute {
+            attributes: RefCell::new(multimap! {
+                0, "x" => Attribute {
                     name: CString::new("x").unwrap(),
                     value: Value::Double(0.0),
-                    // Settable attributes should use the GetAndSet variant.
-                    callbacks: Callbacks::GetAndSet(on_get_x, on_set_x),
+
+                    // Init callbacks are used during the initialization phase of a plugin to
+                    // configure it before use.
+                    callbacks_init: Callbacks::Update,
+
+                    // Settable attributes should use the GetAndSet Callback variant.
+                    callbacks_run: Callbacks::GetAndSet(on_get_x, on_set_x),
                 },
-                Attribute {
+                1, "y" => Attribute {
                     name: CString::new("y").unwrap(),
                     value: Value::Int(0),
+
+                    // Constant init callbacks do not change value what-so-ever during the init
+                    // phase of a plugin. Their value during this phase will be the same as the
+                    // default value defined above.
+                    callbacks_init: Callbacks::Constant,
+
                     // Not all attributes can be set. For example, the value of a sensor may only
                     // be readable. For these attributes, use the Get variant.
-                    callbacks: Callbacks::Get(on_get_y),
+                    callbacks_run: Callbacks::Get(on_get_y),
                 },
-                Attribute {
+                2, "z" => Attribute {
                     name: CString::new("z").unwrap(),
                     value: Value::Int(42),
-                    // Attributes that are constant should use the Constant variant of the
-                    // Callbacks enum. They are not settable and will always return the same value.
-                    callbacks: Callbacks::Constant,
+                    callbacks_init: Callbacks::Constant,
+                    // Attributes that are constant during the run phase of a plugin should use the
+                    // Constant variant of the Callbacks enum. They are not settable and will
+                    // always return the same value.
+                    callbacks_run: Callbacks::Constant,
                 },
-                Attribute {
+                3, "msg" => Attribute {
                     name: CString::new("msg").unwrap(),
                     // Values can contain CStrings as well. A CString is ASCII-encoded and ends in
                     // a null byte.
                     value: Value::String(CString::new("foobar").unwrap()),
-                    callbacks: Callbacks::GetAndSet(on_get_msg, on_set_msg),
-                    //callbacks: Callbacks::Constant,
+                    callbacks_init: Callbacks::Constant,
+                    callbacks_run: Callbacks::GetAndSet(on_get_msg, on_set_msg),
                 },
-            ]),
+            }),
         })
+    }
+
+    /// Initializes the plugin by performing any hardware initialzation.
+    fn init(&mut self) -> Result<(), BasicError> {
+        // Typically we'd actually setup the hardware here, but since this is an example that is
+        // not attached to any real hardware, we just print a message instead.
+        println!("Initializing the BasicPlugin... Done!");
+
+        Ok(())
     }
 
     /// Returns the attributes of the plugin.
@@ -93,7 +115,7 @@ impl PluginAPI<BasicError> for Basic {
 // Callbacks are used to acutally communicate with the hardware whenever an attribute is read or
 // set. Each settable attribute needs its own pair of callbacks, one for getting the value of the
 // attribute and one for setting its value.
-/// Callback function that is fired when the 'x' attribute is read.
+/// Callback function that is fired when the 'x' attribute is read during the run phase.
 ///
 /// # Arguments
 ///
@@ -113,7 +135,7 @@ fn on_get_x(_plugin: &Basic, _cached: &Value) -> Result<Value, BasicError> {
     Ok(_cached.clone())
 }
 
-/// Callback function that is fired when the 'x' attribute is set.
+/// Callback function that is fired when the 'x' attribute is set during the run phase.
 ///
 /// # Arguments
 ///
@@ -230,6 +252,8 @@ declare_plugin!(Basic, BasicError);
 mod tests {
     use libc::c_uchar;
 
+    use crate::RUN_PHASE;
+
     use super::*;
 
     #[test]
@@ -277,9 +301,9 @@ mod tests {
         let new_val = Val::Double(3.14);
 
         // Test setting each attribute to the new value
-        plugin.attribute_set_value(0, &new_val).unwrap();
+        plugin.attribute_set_value(0, &new_val, RUN_PHASE).unwrap();
         let attributes = plugin.attributes.borrow();
-        let actual = &attributes[0].value.as_val();
+        let actual = &attributes.get(&0).unwrap().value.as_val();
         assert_eq!(
             new_val, *actual,
             "Expected attribute value to be {:?} but it was {:?}",
@@ -292,7 +316,7 @@ mod tests {
         let plugin = Basic::new().unwrap();
         let new_val = Val::Double(42.0);
 
-        let result = plugin.attribute_set_value(1, &new_val);
+        let result = plugin.attribute_set_value(1, &new_val, RUN_PHASE);
         match result {
             Ok(_) => panic!("Expected different value variants."),
             Err(_) => (),

@@ -7,8 +7,8 @@ use std::fmt;
 use gpio_cdev::errors::ErrorKind;
 use libc::c_int;
 
-use kpal_plugin::constants::*;
-use kpal_plugin::PluginError;
+use kpal_plugin::error_codes::*;
+use kpal_plugin::{PluginError, PluginUninitializedError};
 
 /// An error raised when trying to create a new GPIO plugin instance.
 #[derive(Debug)]
@@ -74,8 +74,26 @@ impl From<std::convert::Infallible> for GPIOPluginError {
     }
 }
 
+impl From<std::ffi::IntoStringError> for GPIOPluginError {
+    fn from(error: std::ffi::IntoStringError) -> GPIOPluginError {
+        GPIOPluginError {
+            error_code: UNDEFINED_ERR,
+            side: Some(Box::new(error)),
+        }
+    }
+}
+
 impl From<std::num::TryFromIntError> for GPIOPluginError {
     fn from(error: std::num::TryFromIntError) -> GPIOPluginError {
+        GPIOPluginError {
+            error_code: NUMERIC_CONVERSION_ERR,
+            side: Some(Box::new(error)),
+        }
+    }
+}
+
+impl From<PluginUninitializedError> for GPIOPluginError {
+    fn from(error: PluginUninitializedError) -> GPIOPluginError {
         GPIOPluginError {
             error_code: NUMERIC_CONVERSION_ERR,
             side: Some(Box::new(error)),

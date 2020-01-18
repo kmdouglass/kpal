@@ -28,23 +28,21 @@ impl Message {
     ///
     /// # Arguments
     ///
-    /// * `peripheral` - The peripheral to communicate with
-    /// * `plugin` - The plugin that communicates with the peripheral
-    pub fn handle(&self, ex: &mut Executor) {
+    /// * `ex` - A reference to the executor that controls the plugin
+    /// * `periph` - A reference to the peripheral model that maintains the peripheral state
+    pub fn handle(&self, ex: &mut Executor, periph: &mut Peripheral) {
         match self {
-            Message::GetPeripheral(tx) => {
-                log_and_send(tx.clone(), Ok(ex.peripheral.clone()), ex.peripheral.id())
-            }
+            Message::GetPeripheral(tx) => log_and_send(tx.clone(), Ok(periph.clone()), periph.id()),
 
             Message::GetPeripheralAttribute(id, tx) => {
-                let result = attribute_value_wrapper(ex, *id);
+                let result = attribute_value_wrapper(ex, periph, *id);
 
-                log_and_send(tx.clone(), result, ex.peripheral.id());
+                log_and_send(tx.clone(), result, periph.id());
             }
 
             Message::GetPeripheralAttributes(tx) => {
                 let ids = {
-                    let attrs = ex.peripheral.attributes();
+                    let attrs = periph.attributes();
                     let mut ids = Vec::new();
                     for attr in attrs {
                         ids.push(attr.id());
@@ -54,18 +52,18 @@ impl Message {
 
                 let mut attrs = Vec::new();
                 for id in &ids {
-                    let result = attribute_value_wrapper(ex, *id);
+                    let result = attribute_value_wrapper(ex, periph, *id);
                     attrs.push(result);
                 }
 
-                log_and_send(tx.clone(), attrs.into_iter().collect(), ex.peripheral.id());
+                log_and_send(tx.clone(), attrs.into_iter().collect(), periph.id());
             }
 
             Message::PatchPeripheralAttribute(id, value, tx) => {
                 let value: PluginValue = value.as_val();
-                let result = set_attribute_value_wrapper(ex, *id, value);
+                let result = set_attribute_value_wrapper(ex, periph, *id, value);
 
-                log_and_send(tx.clone(), result, ex.peripheral.id());
+                log_and_send(tx.clone(), result, periph.id());
             }
         };
     }
@@ -80,15 +78,18 @@ impl Message {
 ///
 /// * `executor` - A reference to the current executor instance
 /// * `id` - The id of the attribute to fetch
-fn attribute_value_wrapper(executor: &mut Executor, id: usize) -> Result<Attribute, PluginError> {
+fn attribute_value_wrapper(
+    ex: &mut Executor,
+    periph: &mut Peripheral,
+    id: usize,
+) -> Result<Attribute, PluginError> {
     let mut value = PluginValue::Int(0);
-    executor
-        .attribute_value(id, &mut value)
+    ex.attribute_value(id, &mut value)
         .map(|_| {
             log::debug!(
                 "Retrieved value {:?} from peripheral {}",
                 value,
-                executor.peripheral.id(),
+                periph.id(),
             );
         })
         .map_err(|e| {
@@ -96,8 +97,8 @@ fn attribute_value_wrapper(executor: &mut Executor, id: usize) -> Result<Attribu
             PluginError::from(e)
         })?;
 
-    executor.peripheral.set_attribute_from_value(id, value)?;
-    let attr = &executor.peripheral.attributes()[id];
+    periph.set_attribute_from_value(id, value)?;
+    let attr = &periph.attributes()[id];
     Ok(attr.clone())
 }
 
@@ -108,30 +109,27 @@ fn attribute_value_wrapper(executor: &mut Executor, id: usize) -> Result<Attribu
 ///
 /// # Arguments
 ///
-/// * `executor` - A reference to the current executor instance
+/// * `ex` - A reference to the current executor instance
+/// * `periph` - A reference to the perhipheral model that maintains the peripheral's state
 /// * `id` - The id of the attribute to fetch
 /// * `value` - The value to set on the attribute
 fn set_attribute_value_wrapper(
-    executor: &mut Executor,
+    ex: &mut Executor,
+    periph: &mut Peripheral,
     id: usize,
     value: PluginValue,
 ) -> Result<Attribute, PluginError> {
-    executor
-        .set_attribute_value(id, &value)
+    ex.set_attribute_value(id, &value)
         .map(|_| {
-            log::debug!(
-                "Set value {:?} on peripheral {}",
-                value,
-                executor.peripheral.id(),
-            );
+            log::debug!("Set value {:?} on peripheral {}", value, periph.id(),);
         })
         .map_err(|e| {
             log::error!("Message handler error: {:?}", e);
             PluginError::from(e)
         })?;
 
-    executor.peripheral.set_attribute_from_value(id, value)?;
-    let attr = &executor.peripheral.attributes()[id];
+    periph.set_attribute_from_value(id, value)?;
+    let attr = &periph.attributes()[id];
     Ok(attr.clone())
 }
 

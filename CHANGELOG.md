@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2020-01-12
+## [Unreleased] - 2020-02-09
 ### Added
 - A Dockerfile was added at
   [resources/docker/rust-linux-x86_64/Dockerfile](resources/docker/rust-linux-x86_64/Dockerfile)
@@ -29,6 +29,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   plugin code that communicate with the hardware.
 - Peripherals may how have string attributes that contain any character within the ASCII character
   set except for the null byte.
+- Peripherals now have `pre-init` attributes. These allow you to set attribute values before the
+  plugin is initialized, which improves the ergonomics of writing plugins.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.
@@ -42,6 +44,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the `Peripheral` of the user API and to emphasize that it holds the state of a plugin.
 - Many methods in the `PluginAPI` trait now have default implementations so that they are no longer
   required in a plugin library.
+- Changed the name of the `kpal_plugin_init` FFI function to `kpal_plugin_new`.
 
 ### Fixed
 - The integration and unit tests no longer look in only the `target/debug` directory for test

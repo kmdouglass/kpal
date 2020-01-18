@@ -8,10 +8,14 @@ use {
     memchr::memchr,
 };
 
-use kpal_plugin::{constants::*, Val};
+use kpal_plugin::{error_codes::*, Val};
+use kpal_plugin::{ATTRIBUTE_PRE_INIT_FALSE, ATTRIBUTE_PRE_INIT_TRUE, INIT_PHASE, RUN_PHASE};
 
 use super::{
-    errors::{ExecutorError, NameError, PluginError, SetValueError, ValueError},
+    errors::{
+        AdvancePhaseError, ExecutorError, InitError, NameError, PluginError, PreInitError,
+        SetValueError, SyncError, ValueError,
+    },
     messaging::{Receiver, Transmitter},
     Plugin,
 };
@@ -28,14 +32,14 @@ pub struct Executor {
     /// The Plugin instance that is managed by this executor.
     pub plugin: Plugin,
 
-    /// A copy of a Peripheral model.
-    pub peripheral: Peripheral,
-
     /// The executor's receiver.
     pub rx: Receiver,
 
     /// The executor's transmitter.
     pub tx: Transmitter,
+
+    /// The current phase of the plugin's lifetime
+    phase: i32,
 }
 
 impl Executor {
@@ -44,15 +48,15 @@ impl Executor {
     /// # Arguments
     ///
     /// * `plugin` - The Plugin instance that is managed by this Executor
-    /// * `peripheral` - A copy of a Peripheral. This is used to update the corresponding model
-    pub fn new(plugin: Plugin, peripheral: Peripheral) -> Executor {
+    pub fn new(plugin: Plugin) -> Executor {
         let (tx, rx) = channel();
+        let phase = INIT_PHASE;
 
         Executor {
             plugin,
-            peripheral,
             rx,
             tx,
+            phase,
         }
     }
 
@@ -60,27 +64,21 @@ impl Executor {
     ///
     /// The Executor runs inside an infinite loop. During one iteration of the loop, it checks for
     /// a new message in its message queue. If found, it processes the message (possibly by
-    /// communicating with the peripheral through the plugin interface) and returns the via the
-    /// return transmitter that was passed alongside the message.
-    ///
-    /// This is a function and not a method of a Executor instance because the function takes
-    /// ownership of the instance.
+    /// communicating with the peripheral through the plugin interface) and returns the result via
+    /// the return transmitter that was passed alongside the message.
     ///
     /// # Arguments
     ///
-    /// - `executor` - An Executor instance. This will be consumed by the function and cannot be
-    /// used again after this function is called.
-    pub fn run(mut self) {
+    /// * `peripheral` - The instance of a peripheral model that is used to return responses to the
+    /// request handlers
+    pub fn run(mut self, mut peripheral: Peripheral) {
         thread::spawn(move || -> Result<(), ExecutorError> {
             log::info!("Spawning new thread for plugin: {:?}", self.plugin);
 
             loop {
-                log::debug!(
-                    "Checking for messages for peripheral: {}",
-                    self.peripheral.id()
-                );
+                log::debug!("Checking for messages for peripheral: {}", peripheral.id());
                 let msg = self.rx.recv().map_err(|_| ExecutorError {})?;
-                msg.handle(&mut self);
+                msg.handle(&mut self, &mut peripheral);
             }
         });
     }
@@ -140,6 +138,55 @@ impl Executor {
         }
     }
 
+    /// Determines whether an attribute may be set before initialization.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The attribute's unique ID
+    pub fn attribute_pre_init(&self, id: size_t) -> Result<bool, PreInitError> {
+        let mut pre_init: c_char = 0;
+
+        let result = unsafe {
+            (self.plugin.vtable.attribute_pre_init)(
+                self.plugin.plugin_data,
+                id,
+                &mut pre_init as *mut c_char,
+            )
+        };
+
+        if result == PLUGIN_OK {
+            log::debug!("Received pre-init status: {}", pre_init);
+            if pre_init == ATTRIBUTE_PRE_INIT_TRUE {
+                Ok(true)
+            } else if pre_init == ATTRIBUTE_PRE_INIT_FALSE {
+                Ok(false)
+            } else {
+                Err(PreInitError::Failure(
+                    "Could not determine error message from plugin".to_string(),
+                ))
+            }
+        } else if result == ATTRIBUTE_DOES_NOT_EXIST {
+            log::debug!("Attribute does not exist: {}", result);
+            let msg = unsafe {
+                self.error_message(result).unwrap_or_else(|_| {
+                    String::from("Could not determine error message from plugin")
+                })
+            };
+            Err(PreInitError::DoesNotExist(msg))
+        } else {
+            log::error!(
+                "Received error code while determining whether the attribute is pre-init: {}",
+                result
+            );
+            let msg = unsafe {
+                self.error_message(result).unwrap_or_else(|_| {
+                    String::from("Could not determine error message from plugin")
+                })
+            };
+            Err(PreInitError::Failure(msg))
+        }
+    }
+
     /// Returns the value of an attribute from a Plugin.
     ///
     /// # Arguments
@@ -148,7 +195,12 @@ impl Executor {
     /// * `value` - A reference to a value instance into which the attribute's value will be copied
     pub fn attribute_value(&self, id: size_t, value: &mut Val) -> Result<(), ValueError> {
         let result = unsafe {
-            (self.plugin.vtable.attribute_value)(self.plugin.plugin_data, id, value as *mut Val)
+            (self.plugin.vtable.attribute_value)(
+                self.plugin.plugin_data,
+                id,
+                value as *mut Val,
+                self.phase,
+            )
         };
 
         if result == PLUGIN_OK {
@@ -180,12 +232,14 @@ impl Executor {
     ///
     /// * `id` - The attribute's unique ID
     /// * `value` - A reference to a value instance that will be copied into the plugin
+    /// * `phase` - The lifecycle phase of the plugin that determines which callbacks to use
     pub fn set_attribute_value(&self, id: size_t, value: &Val) -> Result<(), SetValueError> {
         let result = unsafe {
             (self.plugin.vtable.set_attribute_value)(
                 self.plugin.plugin_data,
                 id,
                 value as *const Val,
+                self.phase,
             )
         };
 
@@ -199,6 +253,13 @@ impl Executor {
                     .unwrap_or_else(|_| String::from(""))
             };
             Err(SetValueError::DoesNotExist(msg))
+        } else if result == ATTRIBUTE_IS_NOT_SETTABLE {
+            log::debug!("Attribute is not settable: {}", result);
+            let msg = unsafe {
+                self.error_message(result)
+                    .unwrap_or_else(|_| String::from(""))
+            };
+            Err(SetValueError::NotSettable(msg))
         } else {
             log::error!(
                 "Received error code while setting attribute value: {}",
@@ -237,15 +298,23 @@ impl Executor {
         Ok(msg)
     }
 
+    /// Advances the plugin to the next lifecycle phase.
+    pub fn advance(&mut self) -> Result<i32, AdvancePhaseError> {
+        if self.phase == INIT_PHASE {
+            self.phase = RUN_PHASE;
+            return Ok(self.phase);
+        }
+
+        Err(AdvancePhaseError { phase: self.phase })
+    }
+
     /// Gets all attribute values and names from a Plugin and updates the corresponding Peripheral.
     ///
-    /// This method is only called once to initialize the peripheral.
-    pub fn init_attributes(&mut self) {
-        log::info!("Getting attributes for peripheral {}", self.peripheral.id());
-
+    /// This method is only called once to discover the attributes of the plugin.
+    pub fn discover_attributes(&mut self) -> Option<Vec<Attribute>> {
         let mut value = Val::Int(0);
         let mut index = 0;
-        let mut attr: Vec<Attribute> = Vec::new();
+        let mut attrs: Vec<Attribute> = Vec::new();
 
         loop {
             match self.attribute_value(index, &mut value) {
@@ -270,7 +339,18 @@ impl Executor {
                 },
             };
 
-            let new_attr = match Attribute::new(value.clone(), index, name) {
+            let pre_init = match self.attribute_pre_init(index) {
+                Ok(pre_init) => pre_init,
+                Err(err) => match err {
+                    PreInitError::DoesNotExist(_) => break,
+                    PreInitError::Failure(_) => {
+                        index += 1;
+                        continue;
+                    }
+                },
+            };
+
+            let new_attr = match Attribute::new(value.clone(), index, name, pre_init) {
                 Ok(new_attr) => new_attr,
                 Err(err) => {
                     log::error!("Could not create new attribute: {:?}", err);
@@ -278,13 +358,64 @@ impl Executor {
                     continue;
                 }
             };
-            attr.push(new_attr);
+            attrs.push(new_attr);
 
             index += 1;
         }
 
-        self.peripheral.set_attributes(attr);
-        self.peripheral.set_attribute_links();
+        if attrs.is_empty() {
+            None
+        } else {
+            Some(attrs)
+        }
+    }
+
+    /// Initializes the plugin.
+    pub fn init(&self) -> Result<(), InitError> {
+        let result = unsafe { (self.plugin.vtable.plugin_init)(self.plugin.plugin_data) };
+
+        if result == PLUGIN_OK {
+            log::debug!("Plugin's initialzation routine ran successfully.");
+            Ok(())
+        } else {
+            log::error!(
+                "Received error code while initialzing the plugin: {}",
+                result
+            );
+            let msg = unsafe {
+                self.error_message(result)
+                    .unwrap_or_else(|_| String::from(""))
+            };
+            Err(InitError { msg })
+        }
+    }
+
+    /// Synchronizes the plugin with the peripheral model by setting all settable attributes.
+    ///
+    /// # Arguments
+    ///
+    /// * `peripheral` - A reference to peripheral data to which the plugin will be synchronized
+    pub fn sync(&mut self, peripheral: &Peripheral) -> Result<(), SyncError> {
+        for attr in peripheral.attributes() {
+            let value = attr.to_value()?;
+            let val = value.as_val();
+
+            if let Err(err) = self.set_attribute_value(attr.id(), &val) {
+                match err {
+                    SetValueError::NotSettable(_) => {
+                        log::debug!("Skipping synchronization of attribute: {}", attr.id());
+                        continue;
+                    }
+                    _ => {
+                        return Err(SyncError {
+                            side: Box::new(err),
+                        })
+                    }
+                }
+            };
+        }
+
+        Ok(())
     }
 }
 
@@ -296,17 +427,33 @@ mod tests {
 
     use libc::{c_int, c_uchar, size_t};
 
-    use kpal_plugin::{Plugin, PluginData, VTable, Val};
+    use kpal_plugin::{Phase, Plugin, PluginData, VTable, Val};
 
     use crate::models::Peripheral as ModelPeripheral;
 
     type AttributeName = extern "C" fn(*const PluginData, size_t, *mut c_uchar, size_t) -> c_int;
-    type AttributeValue = extern "C" fn(*const PluginData, size_t, *mut Val) -> c_int;
+    type AttributeValue = extern "C" fn(*const PluginData, size_t, *mut Val, Phase) -> c_int;
+
+    #[test]
+    fn test_advance() {
+        let (plugin, _) = set_up();
+        let mut executor = Executor::new(plugin);
+
+        assert_eq!(INIT_PHASE, executor.phase);
+
+        let mut result = executor.advance();
+        assert!(result.is_ok());
+        assert_eq!(RUN_PHASE, executor.phase);
+
+        result = executor.advance();
+        assert!(result.is_err());
+        assert_eq!(RUN_PHASE, executor.phase);
+    }
 
     #[test]
     fn test_error_message() {
-        let (plugin, peripheral) = set_up();
-        let executor = Executor::new(plugin, peripheral);
+        let (plugin, _) = set_up();
+        let executor = Executor::new(plugin);
 
         let msg = unsafe { executor.error_message(0) };
         assert_eq!("foo", msg.unwrap());
@@ -314,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_attribute_name() {
-        let (mut plugin, peripheral) = set_up();
+        let (mut plugin, _) = set_up();
         let cases: Vec<(Result<String, NameError>, AttributeName)> = vec![
             (Ok(String::from("")), attribute_name_ok),
             (
@@ -331,7 +478,7 @@ mod tests {
         let mut executor: Executor;
         for (expected, case) in cases {
             plugin.vtable.attribute_name = case;
-            executor = Executor::new(plugin.clone(), peripheral.clone());
+            executor = Executor::new(plugin.clone());
 
             result = executor.attribute_name(0);
             assert_eq!(expected, result);
@@ -342,7 +489,7 @@ mod tests {
 
     #[test]
     fn test_attribute_value() {
-        let (mut plugin, peripheral) = set_up();
+        let (mut plugin, _) = set_up();
         let cases: Vec<(Result<(), ValueError>, AttributeValue)> = vec![
             (Ok(()), attribute_value_ok),
             (
@@ -360,7 +507,7 @@ mod tests {
         let mut result: Result<(), ValueError>;
         for (expected, case) in cases {
             plugin.vtable.attribute_value = case;
-            executor = Executor::new(plugin.clone(), peripheral.clone());
+            executor = Executor::new(plugin.clone());
 
             result = executor.attribute_value(0, &mut value);
             assert_eq!(expected, result);
@@ -370,21 +517,17 @@ mod tests {
     }
 
     #[test]
-    fn test_init_attributes() {
-        let (plugin, peripheral) = set_up();
-        let mut executor = Executor::new(plugin, peripheral);
+    fn test_discover_attributes() {
+        let (plugin, _) = set_up();
+        let mut executor = Executor::new(plugin);
         let attribute = Attribute::Int {
             id: 0,
             name: String::from("bar"),
+            pre_init: true,
             value: 42,
         };
 
-        assert_eq!(executor.peripheral.attributes().len(), 0);
-
-        executor.init_attributes();
-
-        let attrs = executor.peripheral.attributes();
-        assert_eq!(attrs.len(), 1);
+        let attrs = executor.discover_attributes().unwrap();
         assert_eq!(attribute, attrs[0]);
     }
 
@@ -392,8 +535,10 @@ mod tests {
         let plugin_data = Box::into_raw(Box::new(MockPluginData {})) as *mut PluginData;
         let vtable = VTable {
             plugin_free: def_peripheral_free,
+            plugin_init: def_plugin_init,
             error_message: def_error_message,
             attribute_name: def_attribute_name,
+            attribute_pre_init: def_attribute_pre_init,
             attribute_value: def_attribute_value,
             set_attribute_value: def_set_attribute_value,
         };
@@ -417,6 +562,10 @@ mod tests {
     // Default function pointers for the vtable
     extern "C" fn def_peripheral_free(_: *mut PluginData) {}
 
+    extern "C" fn def_plugin_init(_: *mut PluginData) -> c_int {
+        0
+    }
+
     extern "C" fn def_error_message(_: c_int) -> *const c_uchar {
         b"foo\0" as *const c_uchar
     }
@@ -438,7 +587,15 @@ mod tests {
             ATTRIBUTE_DOES_NOT_EXIST
         }
     }
-    extern "C" fn def_attribute_value(_: *const PluginData, id: size_t, value: *mut Val) -> c_int {
+    extern "C" fn def_attribute_pre_init(_: *const PluginData, _: size_t, _: *mut c_char) -> c_int {
+        PLUGIN_OK
+    }
+    extern "C" fn def_attribute_value(
+        _: *const PluginData,
+        id: size_t,
+        value: *mut Val,
+        _: Phase,
+    ) -> c_int {
         if id == 0 {
             unsafe { *value = Val::Int(42) };
             PLUGIN_OK
@@ -446,7 +603,12 @@ mod tests {
             ATTRIBUTE_DOES_NOT_EXIST
         }
     }
-    extern "C" fn def_set_attribute_value(_: *mut PluginData, _: size_t, _: *const Val) -> c_int {
+    extern "C" fn def_set_attribute_value(
+        _: *mut PluginData,
+        _: size_t,
+        _: *const Val,
+        _: Phase,
+    ) -> c_int {
         0
     }
 
@@ -475,17 +637,28 @@ mod tests {
     ) -> c_int {
         999
     }
-    extern "C" fn attribute_value_ok(_: *const PluginData, _: size_t, _: *mut Val) -> c_int {
+    extern "C" fn attribute_value_ok(
+        _: *const PluginData,
+        _: size_t,
+        _: *mut Val,
+        _: Phase,
+    ) -> c_int {
         PLUGIN_OK
     }
     extern "C" fn attribute_value_does_not_exist(
         _: *const PluginData,
         _: size_t,
         _: *mut Val,
+        _: Phase,
     ) -> c_int {
         ATTRIBUTE_DOES_NOT_EXIST
     }
-    extern "C" fn attribute_value_failure(_: *const PluginData, _: size_t, _: *mut Val) -> c_int {
+    extern "C" fn attribute_value_failure(
+        _: *const PluginData,
+        _: size_t,
+        _: *mut Val,
+        _: Phase,
+    ) -> c_int {
         999
     }
 }
