@@ -14,7 +14,7 @@ use crate::errors::*;
 const DEFAULT_DEVICE_FILE: &str = "/dev/gpiochip0";
 
 /// The GPIO pin number.
-const DEFAULT_OFFSET: i32 = 4;
+const DEFAULT_OFFSET: u32 = 4;
 
 /// Holds the state of the plugin, including the chip and line handles.
 #[derive(Debug)]
@@ -42,7 +42,7 @@ impl PluginAPI<GPIOPluginError> for GPIOPlugin {
             },
             1, "offset" => Attribute {
                     name: CString::new("Offset").unwrap(),
-                    value: Value::Int(DEFAULT_OFFSET),
+                    value: Value::Uint(DEFAULT_OFFSET),
                     callbacks_init: Callbacks::Update,
                     callbacks_run: Callbacks::Constant,
             },
@@ -79,7 +79,7 @@ impl PluginAPI<GPIOPluginError> for GPIOPlugin {
         };
         let mut chip = Chip::new(device_file)?;
 
-        let offset = if let Value::Int(offset) = self
+        let offset = if let Value::Uint(offset) = self
             .attributes
             .borrow()
             .get_alt(&"offset")
@@ -93,12 +93,10 @@ impl PluginAPI<GPIOPluginError> for GPIOPlugin {
         } else {
             unreachable!()
         };
-        // TODO Add unsigned integer type
-        let handle = chip.get_line(offset.try_into().unwrap())?.request(
-            LineRequestFlags::OUTPUT,
-            0,
-            "set-output",
-        )?;
+
+        let handle = chip
+            .get_line(offset)?
+            .request(LineRequestFlags::OUTPUT, 0, "set-output")?;
 
         self.chip = Some(RefCell::new(chip));
         self.line_handle = Some(handle);

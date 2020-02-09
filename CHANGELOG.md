@@ -31,6 +31,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   set except for the null byte.
 - Peripherals now have `pre-init` attributes. These allow you to set attribute values before the
   plugin is initialized, which improves the ergonomics of writing plugins.
+- A new unsigned integer Attribute type was added.
 
 ### Changed
 - All artifacts are now built on the CI with the `--release` profile.
