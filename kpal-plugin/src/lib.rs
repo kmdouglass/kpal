@@ -15,7 +15,7 @@ use std::{
     fmt, slice,
 };
 
-use libc::{c_char, c_double, c_int, c_uchar, size_t};
+use libc::{c_char, c_double, c_int, c_uchar, c_uint, size_t};
 pub use multi_map::{multimap, MultiMap};
 
 pub use {
@@ -168,7 +168,8 @@ where
             let result = match (&attribute.value, &val) {
                 (Value::Int(_), Val::Int(_))
                 | (Value::Double(_), Val::Double(_))
-                | (Value::String(_), Val::String(_, _)) => set(&self, &attribute.value, val),
+                | (Value::String(_), Val::String(_, _))
+                | (Value::Uint(_), Val::Uint(_)) => set(&self, &attribute.value, val),
                 _ => Err(E::new(error_codes::ATTRIBUTE_TYPE_MISMATCH)),
             };
 
@@ -342,6 +343,7 @@ pub enum Value {
     Int(c_int),
     Double(c_double),
     String(CString),
+    Uint(c_uint),
 }
 
 impl Value {
@@ -361,6 +363,7 @@ impl Value {
                 let slice = value.as_bytes_with_nul();
                 Val::String(slice.as_ptr(), slice.len())
             }
+            Value::Uint(value) => Val::Uint(*value),
         }
     }
 }
@@ -375,6 +378,7 @@ pub enum Val {
     Int(c_int),
     Double(c_double),
     String(*const c_uchar, size_t),
+    Uint(c_uint),
 }
 
 impl Val {
@@ -392,6 +396,7 @@ impl Val {
                 let c_string = CStr::from_bytes_with_nul(slice)?.to_owned();
                 Ok(Value::String(c_string))
             }
+            Val::Uint(value) => Ok(Value::Uint(*value)),
         }
     }
 }

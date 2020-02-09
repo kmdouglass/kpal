@@ -103,16 +103,19 @@ pub unsafe fn kpal_plugin_new(lib: &Library) -> Result<Plugin, PluginError> {
     Ok(plugin.assume_init())
 }
 
-/// Merge the attributes of the library model into those of the Peripheral.
+/// Merge the attributes of the library model into those of the peripheral.
 ///
 /// This function enables users to set attribute values before a plugin is initialized. It takes
-/// the attribute values that are input from the user, which is stored in the Peripheral instance,
-/// and merges it into the list of Attributes that the library provides. Then, it replaces the list
-/// of attributes inside the Peripheral instance with this updated list.
+/// the attribute values that are input from the user, which is stored in the peripheral instance,
+/// and merges it into the list of attributes that the library provides. Then, it replaces the list
+/// of attributes inside the peripheral instance with this updated list.
 ///
-/// This method must be updated anytime a new Attribute variant is added.
+/// This method must be updated anytime a new attribute variant is added.
 ///
-/// TODO Finish docstring
+/// # Arguments
+///
+/// * `periph` - The peripheral whose attributes will be merged into those from the library
+/// * `lib` - The library that provides the default set of attributes
 fn merge_attributes(periph: &mut Peripheral, lib: TSLibrary) -> Result<(), MergeAttributesError> {
     use crate::models::Attribute::*;
 

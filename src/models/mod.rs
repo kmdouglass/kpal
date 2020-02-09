@@ -65,6 +65,18 @@ pub enum Attribute {
 
         value: String,
     },
+    #[serde(rename(serialize = "unsigned_integer", deserialize = "unsigned_integer"))]
+    Uint {
+        id: usize,
+
+        #[serde(default)]
+        name: String,
+
+        #[serde(default)]
+        pre_init: bool,
+
+        value: u32,
+    },
 }
 
 impl Attribute {
@@ -74,6 +86,7 @@ impl Attribute {
             Attribute::Int { name, .. } => name,
             Attribute::Double { name, .. } => name,
             Attribute::String { name, .. } => name,
+            Attribute::Uint { name, .. } => name,
         }
     }
 
@@ -83,6 +96,7 @@ impl Attribute {
             Attribute::Int { pre_init, .. } => *pre_init,
             Attribute::Double { pre_init, .. } => *pre_init,
             Attribute::String { pre_init, .. } => *pre_init,
+            Attribute::Uint { pre_init, .. } => *pre_init,
         }
     }
 
@@ -129,6 +143,12 @@ impl Attribute {
                     value,
                 })
             }
+            PluginValue::Uint(value) => Ok(Attribute::Uint {
+                id,
+                name,
+                pre_init,
+                value,
+            }),
         }
     }
 
@@ -141,6 +161,7 @@ impl Attribute {
                 let c_string = CString::new(value.clone())?;
                 Value::String { value: c_string }
             }
+            Attribute::Uint { value, .. } => Value::Uint { value: *value },
         };
 
         Ok(value)
@@ -153,6 +174,7 @@ impl Model for Attribute {
             Attribute::Int { id, .. } => *id,
             Attribute::Double { id, .. } => *id,
             Attribute::String { id, .. } => *id,
+            Attribute::Uint { id, .. } => *id,
         }
     }
 
@@ -202,6 +224,18 @@ impl PartialEq for Attribute {
                     ..
                 },
             ) => id1 == id2 && value1 == value2,
+            (
+                Attribute::Uint {
+                    id: id1,
+                    value: value1,
+                    ..
+                },
+                Attribute::Uint {
+                    id: id2,
+                    value: value2,
+                    ..
+                },
+            ) => id1 == id2 && value1 == value2,
             (_, _) => false,
         }
     }
@@ -220,6 +254,8 @@ pub enum Value {
     Double { value: f64 },
     #[serde(rename(serialize = "string", deserialize = "string"))]
     String { value: CString },
+    #[serde(rename(serialize = "unsigned_integer", deserialize = "unsigned_integer"))]
+    Uint { value: u32 },
 }
 
 impl Value {
@@ -231,6 +267,7 @@ impl Value {
                 let slice = value.as_bytes_with_nul();
                 PluginValue::String(slice.as_ptr(), slice.len())
             }
+            Value::Uint { value } => PluginValue::Uint(*value),
         }
     }
 }
