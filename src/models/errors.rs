@@ -1,4 +1,6 @@
-use std::{boxed::Box, error::Error, ffi::FromBytesWithNulError, fmt, str::Utf8Error};
+use std::{
+    boxed::Box, error::Error, ffi::FromBytesWithNulError, ffi::NulError, fmt, str::Utf8Error,
+};
 
 /// An error type that represents a failure to convert a Val to a Value.
 #[derive(Debug)]
@@ -44,6 +46,14 @@ impl fmt::Display for ValueConversionError {
 
 impl From<FromBytesWithNulError> for ValueConversionError {
     fn from(error: FromBytesWithNulError) -> Self {
+        ValueConversionError {
+            side: Box::new(error),
+        }
+    }
+}
+
+impl From<NulError> for ValueConversionError {
+    fn from(error: NulError) -> Self {
         ValueConversionError {
             side: Box::new(error),
         }

@@ -2,6 +2,7 @@
 //!
 //! See the examples folder for ideas on how to implement the datatypes and methods defined in this
 //! library.
+mod constants;
 mod errors;
 mod ffi;
 mod strings;
@@ -14,20 +15,27 @@ use std::{
     fmt, slice,
 };
 
-use libc::{c_double, c_int, c_uchar, size_t};
+use libc::{c_char, c_double, c_int, c_uchar, size_t};
+pub use multi_map::{multimap, MultiMap};
 
-pub use errors::constants;
-pub use errors::ERRORS;
-pub use ffi::*;
-pub use strings::copy_string;
+pub use {
+    constants::*,
+    errors::error_codes,
+    errors::{PluginUninitializedError, ERRORS},
+    ffi::*,
+    strings::copy_string,
+};
 
 /// The set of functions that must be implemented by a plugin.
 pub trait PluginAPI<E: Error + PluginError + 'static>
 where
     Self: Sized,
 {
-    /// Initializes and returns a new instance of the plugin.
+    /// Returns a new instance of the plugin. No initialization of the hardware is performed.
     fn new() -> Result<Self, E>;
+
+    /// Initialzes the plugin by performing any hardware initialization.
+    fn init(&mut self) -> Result<(), E>;
 
     /// Returns the attributes of the plugin.
     fn attributes(&self) -> &Attributes<Self, E>;
@@ -43,9 +51,35 @@ where
     fn attribute_name(&self, id: usize) -> Result<Ref<CString>, E> {
         log::debug!("Received request for the name of attribute: {}", id);
         let attributes = self.attributes().borrow();
-        match attributes.get(id) {
-            Some(_) => Ok(Ref::map(attributes, |a| &a[id].name)),
-            None => Err(E::new(constants::ATTRIBUTE_DOES_NOT_EXIST)),
+        match attributes.get(&id) {
+            Some(_) => Ok(Ref::map(attributes, |a| {
+                &a.get(&id)
+                    .expect("Attribute does not exist. This should never happen.")
+                    .name
+            })),
+            None => Err(E::new(error_codes::ATTRIBUTE_DOES_NOT_EXIST)),
+        }
+    }
+
+    /// Indicates whether an attribute may be set before initialization.
+    ///
+    /// # Arguments
+    ///
+    /// # `id` - the numeric ID of the attribute
+    fn attribute_pre_init(&self, id: usize) -> Result<bool, E> {
+        log::debug!(
+            "Received request for attribute pre-initialzation status: {}",
+            id
+        );
+        let attributes = self.attributes();
+        let attributes = attributes.borrow();
+        let attribute = attributes
+            .get(&id)
+            .ok_or_else(|| E::new(error_codes::ATTRIBUTE_DOES_NOT_EXIST))?;
+
+        match attribute.callbacks_init {
+            Callbacks::Update => Ok(true),
+            _ => Ok(false),
         }
     }
 
@@ -57,23 +91,36 @@ where
     /// # Arguments
     ///
     /// * `id` - the numeric ID of the attribute
-    fn attribute_value(&self, id: usize) -> Result<Val, E> {
+    /// * `phase` - the lifecycle phase of the plugin that determines which callbacks to use
+    fn attribute_value(&self, id: usize, phase: Phase) -> Result<Val, E> {
         log::debug!("Received request for the value of attribute: {}", id);
         let attributes = self.attributes();
         let mut attributes = attributes.borrow_mut();
         let attribute = attributes
-            .get_mut(id)
-            .ok_or_else(|| E::new(constants::ATTRIBUTE_DOES_NOT_EXIST))?;
+            .get_mut(&id)
+            .ok_or_else(|| E::new(error_codes::ATTRIBUTE_DOES_NOT_EXIST))?;
 
-        let get = match attribute.callbacks {
-            Callbacks::Constant => return Ok(attribute.value.as_val()),
-            Callbacks::Get(get) => get,
-            Callbacks::GetAndSet(get, _) => get,
+        let get = if phase == constants::INIT_PHASE {
+            match attribute.callbacks_init {
+                Callbacks::Constant => return Ok(attribute.value.as_val()),
+                Callbacks::Update => return Ok(attribute.value.as_val()),
+                Callbacks::Get(get) => get,
+                Callbacks::GetAndSet(get, _) => get,
+            }
+        } else if phase == constants::RUN_PHASE {
+            match attribute.callbacks_run {
+                Callbacks::Constant => return Ok(attribute.value.as_val()),
+                Callbacks::Update => return Ok(attribute.value.as_val()),
+                Callbacks::Get(get) => get,
+                Callbacks::GetAndSet(get, _) => get,
+            }
+        } else {
+            return Err(E::new(error_codes::LIFECYCLE_PHASE_ERR));
         };
 
         let value = get(&self, &attribute.value).map_err(|err| {
             log::error!("Callback error {{ id: {:?}, error: {:?} }}", id, err);
-            E::new(constants::CALLBACK_ERR)
+            E::new(error_codes::CALLBACK_ERR)
         })?;
 
         // Update the attribute's cached value.
@@ -91,31 +138,45 @@ where
     ///
     /// * `id` - the numeric ID of the attribute
     /// * `val` - a reference to a Val instance
-    fn attribute_set_value(&self, id: usize, val: &Val) -> Result<(), E> {
+    /// * `phase` - the lifecycle phase of the plugin that determines which callbacks to use
+    fn attribute_set_value(&self, id: usize, val: &Val, phase: Phase) -> Result<(), E> {
         log::debug!("Received request to set the value of attribute: {}", id);
         let attributes = self.attributes();
         let mut attributes = attributes.borrow_mut();
         let attribute = attributes
-            .get_mut(id)
-            .ok_or_else(|| E::new(constants::ATTRIBUTE_DOES_NOT_EXIST))?;
+            .get_mut(&id)
+            .ok_or_else(|| E::new(error_codes::ATTRIBUTE_DOES_NOT_EXIST))?;
 
-        let set = match attribute.callbacks {
-            Callbacks::GetAndSet(_, set) => set,
-            _ => return Err(E::new(constants::ATTRIBUTE_IS_NOT_SETTABLE)),
+        let option_set = if phase == constants::INIT_PHASE {
+            match attribute.callbacks_init {
+                Callbacks::Update => None,
+                Callbacks::GetAndSet(_, set) => Some(set),
+                _ => return Err(E::new(error_codes::ATTRIBUTE_IS_NOT_SETTABLE)),
+            }
+        } else if phase == constants::RUN_PHASE {
+            match attribute.callbacks_run {
+                Callbacks::Update => None,
+                Callbacks::GetAndSet(_, set) => Some(set),
+                _ => return Err(E::new(error_codes::ATTRIBUTE_IS_NOT_SETTABLE)),
+            }
+        } else {
+            return Err(E::new(error_codes::LIFECYCLE_PHASE_ERR));
         };
 
-        // This MUST be updated each time a new variant is added to the Value and Val enums.
-        let result = match (&attribute.value, &val) {
-            (Value::Int(_), Val::Int(_))
-            | (Value::Double(_), Val::Double(_))
-            | (Value::String(_), Val::String(_, _)) => set(&self, &attribute.value, val),
-            _ => Err(E::new(constants::ATTRIBUTE_TYPE_MISMATCH)),
-        };
+        if let Some(set) = option_set {
+            // This MUST be updated each time a new variant is added to the Value and Val enums.
+            let result = match (&attribute.value, &val) {
+                (Value::Int(_), Val::Int(_))
+                | (Value::Double(_), Val::Double(_))
+                | (Value::String(_), Val::String(_, _)) => set(&self, &attribute.value, val),
+                _ => Err(E::new(error_codes::ATTRIBUTE_TYPE_MISMATCH)),
+            };
 
-        result.map_err(|err| {
-            log::error!("Callback error {{ id: {:?}, error: {:?} }}", id, err);
-            E::new(constants::CALLBACK_ERR)
-        })?;
+            result.map_err(|err| {
+                log::error!("Callback error {{ id: {:?}, error: {:?} }}", id, err);
+                E::new(error_codes::CALLBACK_ERR)
+            })?;
+        };
 
         // Update the attribute's cached value.
         attribute.value = val.to_value().map_err(|err| {
@@ -124,7 +185,7 @@ where
                 id,
                 err
             );
-            E::new(constants::UPDATE_CACHED_VALUE_ERR)
+            E::new(error_codes::UPDATE_CACHED_VALUE_ERR)
         })?;
 
         Ok(())
@@ -198,6 +259,13 @@ pub struct VTable {
     /// Frees the memory associated with a plugin's data.
     pub plugin_free: extern "C" fn(*mut PluginData),
 
+    /// Initializes a plugin.
+    ///
+    /// This method is distinct from the `kpal_plugin_new` FFI call in that it actually
+    /// communicates with the hardware, whereas `kpal_plugin_new` is used merely to create the
+    /// plugin data structures.
+    pub plugin_init: unsafe extern "C" fn(*mut PluginData) -> c_int,
+
     /// Returns an error message associated with a Plugin error code.
     pub error_message: extern "C" fn(c_int) -> *const c_uchar,
 
@@ -209,13 +277,28 @@ pub struct VTable {
         length: size_t,
     ) -> c_int,
 
+    /// Indicates whether an attribute may be set before initialization.
+    pub attribute_pre_init: unsafe extern "C" fn(
+        plugin_data: *const PluginData,
+        id: size_t,
+        pre_init: *mut c_char,
+    ) -> c_int,
+
     /// Writes the value of an attribute to a Value instance that is provided by the caller.
-    pub attribute_value:
-        unsafe extern "C" fn(plugin_data: *const PluginData, id: size_t, value: *mut Val) -> c_int,
+    pub attribute_value: unsafe extern "C" fn(
+        plugin_data: *const PluginData,
+        id: size_t,
+        value: *mut Val,
+        phase: Phase,
+    ) -> c_int,
 
     /// Sets the value of an attribute.
-    pub set_attribute_value:
-        unsafe extern "C" fn(plugin_data: *mut PluginData, id: size_t, value: *const Val) -> c_int,
+    pub set_attribute_value: unsafe extern "C" fn(
+        plugin_data: *mut PluginData,
+        id: size_t,
+        value: *const Val,
+        phase: Phase,
+    ) -> c_int,
 }
 
 /// The type signature of the function that returns a new plugin instance.
@@ -225,7 +308,7 @@ pub type KpalPluginInit = unsafe extern "C" fn(*mut Plugin) -> c_int;
 pub type KpalLibraryInit = unsafe extern "C" fn() -> c_int;
 
 /// The type signature of the collection of attributes that is owned by the plugin.
-pub type Attributes<T, E> = RefCell<Vec<Attribute<T, E>>>;
+pub type Attributes<T, E> = RefCell<MultiMap<usize, &'static str, Attribute<T, E>>>;
 
 /// A single piece of information that partly determines the state of a plugin.
 #[derive(Debug)]
@@ -240,8 +323,13 @@ pub struct Attribute<T, E: Error + PluginError> {
     /// value of non-constant attributes.
     pub value: Value,
 
-    /// The callback functions that are fired when the attribute is either read or set.
-    pub callbacks: Callbacks<T, E>,
+    /// The callback functions that are fired when the attribute is either read or set during the
+    /// init phase of the plugin.
+    pub callbacks_init: Callbacks<T, E>,
+
+    /// The callback functions that are fired when the attribute is either read or set during the
+    /// run phase of the plugin.
+    pub callbacks_run: Callbacks<T, E>,
 }
 
 /// An owned value of an attribute.
@@ -310,11 +398,16 @@ impl Val {
 
 /// Callback functions that communicate with the hardware when an attribute is read or set.
 ///
-/// The purpose of a callback is to perform the actual communication with the hardware. If the
-/// attribute is constant and never changes its original value, then the `Constant` variant should
-/// be used. If the attribute's value changes without user input (e.g. a sensor reading) but cannot
-/// be set, then use the `Get` variant. Otherwise, for attributes that can be both read and set,
-/// use the `GetAndSet` variant.
+/// The purpose of a callback is two-fold: it performs the actual communication with the hardware
+/// and/or it modifies the plugin's cached attribute data.
+///
+/// If the attribute is constant and never changes its original value, then the `Constant` variant
+/// should be used. If the attribute's value changes without user input (e.g. a sensor reading) but
+/// cannot be set, then use the `Get` variant. Otherwise, for attributes that can be both read and
+/// set, use the `GetAndSet` variant.
+///
+/// The Update variant is used to set only the cached value of attributes. Attributes that are
+/// Update always return their cached value when the attribute's value is read.
 #[repr(C)]
 pub enum Callbacks<T, E: Error + PluginError> {
     Constant,
@@ -323,6 +416,7 @@ pub enum Callbacks<T, E: Error + PluginError> {
         fn(plugin: &T, cached: &Value) -> Result<Value, E>,
         fn(plugin: &T, cached: &Value, value: &Val) -> Result<(), E>,
     ),
+    Update,
 }
 
 impl<T, E: Error + PluginError> fmt::Debug for Callbacks<T, E> {
@@ -336,6 +430,7 @@ impl<T, E: Error + PluginError> fmt::Debug for Callbacks<T, E> {
                 "Get Callback: {:x}, Set Callback: {:x}",
                 get as usize, set as usize
             ),
+            Update => write!(f, "Update"),
         }
     }
 }
@@ -368,7 +463,7 @@ macro_rules! declare_plugin {
         /// This function is unsafe because it dereferences a null pointer and assigns data to a
         /// variable of the type `MaybeUnit`.
         #[no_mangle]
-        pub unsafe extern "C" fn kpal_plugin_init(plugin: *mut Plugin) -> c_int {
+        pub unsafe extern "C" fn kpal_plugin_new(plugin: *mut Plugin) -> c_int {
             let plugin_data = match <$plugin_type>::new() {
                 Ok(plugin_data) => plugin_data,
                 Err(e) => {
@@ -382,8 +477,10 @@ macro_rules! declare_plugin {
 
             let vtable = VTable {
                 plugin_free,
+                plugin_init: plugin_init::<$plugin_type, $plugin_err_type>,
                 error_message,
                 attribute_name: attribute_name::<$plugin_type, $plugin_err_type>,
+                attribute_pre_init: attribute_pre_init::<$plugin_type, $plugin_err_type>,
                 attribute_value: attribute_value::<$plugin_type, $plugin_err_type>,
                 set_attribute_value: set_attribute_value::<$plugin_type, $plugin_err_type>,
             };
@@ -393,7 +490,7 @@ macro_rules! declare_plugin {
                 vtable,
             });
 
-            log::debug!("Initialized plugin: {:?}", plugin);
+            log::debug!("Created new plugin: {:?}", plugin);
             PLUGIN_OK
         }
     };

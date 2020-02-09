@@ -13,9 +13,12 @@ use libc::c_int;
 use libloading::{Library as Dll, Symbol};
 use log;
 
-use kpal_plugin::{constants::*, KpalLibraryInit};
+use kpal_plugin::{error_codes::*, KpalLibraryInit, Plugin};
 
-use crate::models::Library;
+use crate::{
+    models::Library,
+    plugins::{kpal_plugin_new, Executor},
+};
 
 /// A thread safe version of a [Library](../models/struct.Library.html) instance.
 ///
@@ -35,7 +38,7 @@ pub fn init(dir: &Path) -> Result<Vec<TSLibrary>, LibraryInitError> {
         dir
     );
 
-    let libraries = find_peripherals(&dir)
+    let libraries = find_libraries(&dir)
         .map_err(|e| {
             log::error!(
                 "Failed to load peripheral library directory {:?}: {}",
@@ -49,7 +52,7 @@ pub fn init(dir: &Path) -> Result<Vec<TSLibrary>, LibraryInitError> {
             LibraryInitError
         })?;
 
-    load_peripherals(libraries).ok_or_else(|| LibraryInitError)
+    load_libraries(libraries).ok_or_else(|| LibraryInitError)
 }
 
 /// Finds all plugin library files inside a directory.
@@ -57,7 +60,7 @@ pub fn init(dir: &Path) -> Result<Vec<TSLibrary>, LibraryInitError> {
 /// # Arguments
 ///
 /// * `dir` - A path to a directory to search for plugin library files
-fn find_peripherals(dir: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
+fn find_libraries(dir: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
     let mut peripherals: Vec<PathBuf> = Vec::new();
     log::debug!("Beginning search for peripheral libraries in {:?}", dir);
     for entry in read_dir(dir)? {
@@ -89,7 +92,7 @@ fn find_peripherals(dir: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
 /// # Arguments
 ///
 /// * `lib_paths` - A vector of `PathBuf`s pointing to library files to load
-fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
+fn load_libraries(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
     log::debug!("Loading peripherals...");
     let (mut libraries, mut counter) = (Vec::new(), 0usize);
 
@@ -115,7 +118,7 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
         };
 
         log::info!("Calling initialization routine for {}", path);
-        let result = match initialize_library(&lib) {
+        let result = match init_library(&lib) {
             Ok(result) => result,
             Err(_) => {
                 log::error!("Failed to call initialization routine for {}", path);
@@ -128,12 +131,13 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
             continue;
         }
 
-        libraries.push(Arc::new(Mutex::new(Library::new(
-            counter,
-            file_name,
-            Some(lib),
-        ))));
+        let mut new_lib = Library::new(counter, file_name, Some(lib));
+        if init_library_attributes(&mut new_lib).is_err() {
+            log::error!("Failed to initialize library attributes: {:?}", new_lib);
+            continue;
+        };
 
+        libraries.push(Arc::new(Mutex::new(new_lib)));
         counter += 1;
         log::info!("Initialization of {} succeeded.", path);
     }
@@ -152,11 +156,22 @@ fn load_peripherals(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
 /// # Arguments
 ///
 /// * `lib` - The library to initialize
-fn initialize_library(lib: &Dll) -> Result<c_int, io::Error> {
+fn init_library(lib: &Dll) -> Result<c_int, io::Error> {
     unsafe {
         let init: Symbol<KpalLibraryInit> = lib.get(b"kpal_library_init\0")?;
         Ok(init())
     }
+}
+
+fn init_library_attributes(lib: &mut Library) -> Result<(), LibraryInitError> {
+    let plugin: Plugin = unsafe { kpal_plugin_new(lib).map_err(|_| LibraryInitError {})? };
+    let mut executor = Executor::new(plugin);
+    let attrs = executor
+        .discover_attributes()
+        .ok_or_else(|| LibraryInitError {})?;
+    lib.set_attributes(attrs);
+
+    Ok(())
 }
 
 /// A general error that is raised while initializing the libraries.
@@ -203,9 +218,9 @@ mod tests {
         Ok(libs)
     }
 
-    /// find_peripherals works when only library files are present.
+    /// find_libraries works when only library files are present.
     #[test]
-    fn find_peripherals_library_files_only() {
+    fn find_libraries_library_files_only() {
         set_up();
 
         let dir = tempdir().expect("Could not create temporary directory for test data.");
@@ -214,7 +229,7 @@ mod tests {
                 .expect("Could not create test data files");
 
         let result =
-            find_peripherals(dir.path()).expect("Call to find_peripherals resulted in an error.");
+            find_libraries(dir.path()).expect("Call to find_libraries resulted in an error.");
         let mut found_libs = match result {
             Some(libs) => libs,
             None => panic!("Found no libraries in the test data folder."),
@@ -226,9 +241,9 @@ mod tests {
         assert_eq!(libs.len(), found_libs.len());
     }
 
-    /// find_peripherals works when library files and other file types are present.
+    /// find_libraries works when library files and other file types are present.
     #[test]
-    fn find_peripherals_mixed_file_types() {
+    fn find_libraries_mixed_file_types() {
         set_up();
 
         let dir = tempdir().expect("Could not create temporary directory for test data.");
@@ -237,7 +252,7 @@ mod tests {
                 .expect("Could not create test data files");
 
         let result =
-            find_peripherals(dir.path()).expect("Call to find_peripherals resulted in an error.");
+            find_libraries(dir.path()).expect("Call to find_libraries resulted in an error.");
         let mut found_libs = match result {
             Some(libs) => libs,
             None => panic!("Found no libraries in the test data folder."),
@@ -249,22 +264,22 @@ mod tests {
         assert_eq!(2, found_libs.len());
     }
 
-    /// find_peripherals returns None when no library files are present.
+    /// find_libraries returns None when no library files are present.
     #[test]
-    fn find_peripherals_no_peripheral_library_files() {
+    fn find_libraries_no_peripheral_library_files() {
         set_up();
 
         let dir = tempdir().expect("Could not create temporary directory for test data.");
         create_dummy_files(&dir, vec!["data.txt"]).expect("Could not create test data files");
 
         let result =
-            find_peripherals(dir.path()).expect("Call to find_peripherals resulted in an error.");
+            find_libraries(dir.path()).expect("Call to find_libraries resulted in an error.");
         assert_eq!(None, result);
     }
 
-    /// load_peripherals works for a list of correct library files.
+    /// load_libraries works for a list of correct library files.
     #[test]
-    fn load_peripherals_loads_library_files() {
+    fn load_libraries_loads_library_files() {
         set_up();
 
         let lib = {
@@ -278,12 +293,12 @@ mod tests {
         let mut libs: Vec<PathBuf> = Vec::new();
         libs.push(lib);
 
-        assert!(load_peripherals(libs).is_some());
+        assert!(load_libraries(libs).is_some());
     }
 
-    /// load_peripherals does not return library files that do not exist.
+    /// load_libraries does not return library files that do not exist.
     #[test]
-    fn load_peripherals_handles_missing_library_files() {
+    fn load_libraries_handles_missing_library_files() {
         set_up();
 
         let mut lib = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -292,6 +307,6 @@ mod tests {
         let mut libs: Vec<PathBuf> = Vec::new();
         libs.push(lib);
 
-        assert!(load_peripherals(libs).is_none());
+        assert!(load_libraries(libs).is_none());
     }
 }

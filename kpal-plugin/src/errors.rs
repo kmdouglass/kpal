@@ -1,6 +1,8 @@
 //! Structures that provide error information to clients of the plugin library.
 
-pub static ERRORS: [&[u8]; 11] = [
+use std::{error::Error, fmt};
+
+pub static ERRORS: [&[u8]; 12] = [
     // 0 PLUGIN_OK
     b"Plugin OK\0",
     // 1 UNDEFINED_ERR
@@ -23,9 +25,26 @@ pub static ERRORS: [&[u8]; 11] = [
     b"The plugin attribute's callback failed\0",
     // 10 UPDATE_CACHED_VALUE_ERR
     b"Could not update plugin attribute's cached value\0",
+    // 11 LIFECYCLE_PHASE_ERR
+    b"Unrecognized lifecycle phase\0",
 ];
 
-pub mod constants {
+/// An error that is raised when a plugin is assumed to be in its run phase but it has not yet been
+/// initialized.
+///
+/// This error type is provided as a convenience for use in plugin libraries.
+#[derive(Debug)]
+pub struct PluginUninitializedError {}
+
+impl Error for PluginUninitializedError {}
+
+impl fmt::Display for PluginUninitializedError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "PluginUninitializederror")
+    }
+}
+
+pub mod error_codes {
     //! Constants that indicate specific error codes that a plugin can return.
     use libc::c_int;
 
@@ -40,4 +59,5 @@ pub mod constants {
     pub const NULL_PTR_ERR: c_int = 8;
     pub const CALLBACK_ERR: c_int = 9;
     pub const UPDATE_CACHED_VALUE_ERR: c_int = 10;
+    pub const LIFECYCLE_PHASE_ERR: c_int = 11;
 }

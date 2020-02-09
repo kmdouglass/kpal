@@ -19,29 +19,70 @@ pub trait Model {
     fn key() -> &'static str;
 }
 
+/// Attributes partially represent the complete state of a peripheral.
+///
+/// id and value are currenly the only fields that are deserialized because attributes are only
+/// sent once during the lifetime of a peripheral before it is initialized. At this time, only id a
+/// value are needed.
 #[derive(Clone, Deserialize, Debug, Serialize)]
 #[serde(tag = "variant")]
 pub enum Attribute {
     #[serde(rename(serialize = "integer", deserialize = "integer"))]
-    Int { id: usize, name: String, value: i32 },
+    Int {
+        id: usize,
+
+        #[serde(default)]
+        name: String,
+
+        #[serde(default)]
+        pre_init: bool,
+
+        value: i32,
+    },
 
     #[serde(rename(serialize = "double", deserialize = "double"))]
-    Double { id: usize, name: String, value: f64 },
+    Double {
+        id: usize,
+
+        #[serde(default)]
+        name: String,
+
+        #[serde(default)]
+        pre_init: bool,
+
+        value: f64,
+    },
 
     #[serde(rename(serialize = "string", deserialize = "string"))]
     String {
         id: usize,
+
+        #[serde(default)]
         name: String,
+
+        #[serde(default)]
+        pre_init: bool,
+
         value: String,
     },
 }
 
 impl Attribute {
+    /// Returns the name of an attribute.
     pub fn name(&self) -> &str {
         match self {
             Attribute::Int { name, .. } => name,
             Attribute::Double { name, .. } => name,
             Attribute::String { name, .. } => name,
+        }
+    }
+
+    /// Indicates whether an attribute's value may be modified before peripheral initialization.
+    pub fn pre_init(&self) -> bool {
+        match self {
+            Attribute::Int { pre_init, .. } => *pre_init,
+            Attribute::Double { pre_init, .. } => *pre_init,
+            Attribute::String { pre_init, .. } => *pre_init,
         }
     }
 
@@ -52,26 +93,57 @@ impl Attribute {
     ///
     /// # Arguments
     ///
-    /// * `value` The value to assign to the new attribute
-    /// * `id` The numeric ID of the attribute
-    /// * `name` The attribute's name
+    /// * `value` - The value to assign to the new attribute
+    /// * `id` - The numeric ID of the attribute
+    /// * `name` - The attribute's name
+    /// * `pre_init` - Detemines whether the attribute may be set before plugin initialization
     pub fn new(
         value: PluginValue,
         id: usize,
         name: String,
+        pre_init: bool,
     ) -> Result<Attribute, ValueConversionError> {
         match value {
-            PluginValue::Int(value) => Ok(Attribute::Int { id, name, value }),
-            PluginValue::Double(value) => Ok(Attribute::Double { id, name, value }),
+            PluginValue::Int(value) => Ok(Attribute::Int {
+                id,
+                name,
+                pre_init,
+                value,
+            }),
+            PluginValue::Double(value) => Ok(Attribute::Double {
+                id,
+                name,
+                pre_init,
+                value,
+            }),
             PluginValue::String(p_value, length) => {
                 let value = unsafe {
                     let slice = slice::from_raw_parts(p_value, length);
                     let string = CStr::from_bytes_with_nul(slice)?.to_str()?;
                     string.to_owned()
                 };
-                Ok(Attribute::String { id, name, value })
+                Ok(Attribute::String {
+                    id,
+                    name,
+                    pre_init,
+                    value,
+                })
             }
         }
+    }
+
+    /// Returns a new value instance that is created from an attribute.
+    pub fn to_value(&self) -> Result<Value, ValueConversionError> {
+        let value = match self {
+            Attribute::Int { value, .. } => Value::Int { value: *value },
+            Attribute::Double { value, .. } => Value::Double { value: *value },
+            Attribute::String { value, .. } => {
+                let c_string = CString::new(value.clone())?;
+                Value::String { value: c_string }
+            }
+        };
+
+        Ok(value)
     }
 }
 
@@ -97,27 +169,39 @@ impl PartialEq for Attribute {
             (
                 Attribute::Int {
                     id: id1,
-                    name: name1,
                     value: value1,
+                    ..
                 },
                 Attribute::Int {
                     id: id2,
-                    name: name2,
                     value: value2,
+                    ..
                 },
-            ) => id1 == id2 && name1 == name2 && value1 == value2,
+            ) => id1 == id2 && value1 == value2,
             (
                 Attribute::Double {
                     id: id1,
-                    name: name1,
                     value: value1,
+                    ..
                 },
                 Attribute::Double {
                     id: id2,
-                    name: name2,
                     value: value2,
+                    ..
                 },
-            ) => id1 == id2 && name1 == name2 && value1 == value2,
+            ) => id1 == id2 && value1 == value2,
+            (
+                Attribute::String {
+                    id: id1,
+                    value: value1,
+                    ..
+                },
+                Attribute::String {
+                    id: id2,
+                    value: value2,
+                    ..
+                },
+            ) => id1 == id2 && value1 == value2,
             (_, _) => false,
         }
     }
@@ -155,6 +239,7 @@ impl Value {
 pub struct Library {
     id: usize,
     name: String,
+    attributes: Vec<Attribute>,
 
     #[serde(skip)]
     library: Option<Dll>,
@@ -165,19 +250,34 @@ impl Clone for Library {
     fn clone(&self) -> Self {
         Library {
             id: self.id,
-            library: None,
             name: self.name.clone(),
+            attributes: self.attributes.clone(),
+            library: None,
         }
     }
 }
 
 impl Library {
     pub fn new(id: usize, name: String, library: Option<Dll>) -> Library {
-        Library { id, name, library }
+        let attributes: Vec<Attribute> = Vec::new();
+        Library {
+            id,
+            name,
+            attributes,
+            library,
+        }
     }
 
     pub fn dll(&self) -> &Option<Dll> {
         &self.library
+    }
+
+    pub fn attributes(&self) -> &Vec<Attribute> {
+        &self.attributes
+    }
+
+    pub fn set_attributes(&mut self, attributes: Vec<Attribute>) {
+        self.attributes = attributes;
     }
 }
 
@@ -196,7 +296,7 @@ pub struct Peripheral {
     library_id: usize,
     name: String,
 
-    #[serde(skip)]
+    #[serde(default, skip_serializing)]
     attributes: Vec<Attribute>,
 
     #[serde(default)]
@@ -234,7 +334,7 @@ impl Peripheral {
         value: PluginValue,
     ) -> Result<(), AttributeError> {
         let attribute = self.attributes.get_mut(id).unwrap();
-        *attribute = Attribute::new(value, id, attribute.name().to_owned())?;
+        *attribute = Attribute::new(value, id, attribute.name().to_owned(), attribute.pre_init())?;
         Ok(())
     }
 
@@ -285,7 +385,8 @@ mod tests {
         let cases = values.into_iter().zip(context.attributes);
 
         for (value, attr) in cases {
-            let converted_attr = Attribute::new(value, context.id, context.name.clone()).unwrap();
+            let converted_attr =
+                Attribute::new(value, context.id, context.name.clone(), context.pre_init).unwrap();
             assert_eq!(attr, converted_attr);
         }
     }
@@ -330,6 +431,7 @@ mod tests {
         let library = Library {
             id: context.id,
             name: context.name,
+            attributes: context.attributes,
             library: None,
         };
 
@@ -354,6 +456,7 @@ mod tests {
         let new_attr = Attribute::Double {
             id: context.id,
             name: context.name,
+            pre_init: context.pre_init,
             value: PI,
         };
 
@@ -369,6 +472,7 @@ mod tests {
         let new_attr = Attribute::Double {
             id: context.id,
             name: context.name.clone(),
+            pre_init: context.pre_init,
             value: PI,
         };
 
@@ -389,6 +493,7 @@ mod tests {
         let new_attr = Attribute::Double {
             id: context.id,
             name: context.name.clone(),
+            pre_init: context.pre_init,
             value: PI,
         };
 
@@ -409,20 +514,24 @@ mod tests {
         library_id: usize,
         name: String,
         peripheral: Peripheral,
+        pre_init: bool,
     }
 
     fn set_up() -> Context {
         let (id, name, int_value, float_value) = (0, String::from("foo"), 42, 42.42);
         let library_id = 1;
+        let pre_init = false;
         let attributes = vec![
             Attribute::Int {
                 id: id,
                 name: name.clone(),
+                pre_init,
                 value: int_value,
             },
             Attribute::Double {
                 id: id,
                 name: name.clone(),
+                pre_init,
                 value: float_value,
             },
         ];
@@ -444,6 +553,7 @@ mod tests {
             library_id,
             name,
             peripheral,
+            pre_init,
         }
     }
 }
