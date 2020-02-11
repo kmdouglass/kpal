@@ -272,6 +272,14 @@ impl From<ValueConversionError> for SyncError {
     }
 }
 
+/// Represents an error encountered when fetching the attribute count.
+#[derive(Debug, PartialEq)]
+pub struct CountError(pub String);
+
+/// Represents an error encountered when fetching the attribute IDs.
+#[derive(Debug, PartialEq)]
+pub struct IdsError(pub String);
+
 /// Represents the state of a result obtained by fetching a name from an attribute.
 #[derive(Debug, PartialEq)]
 pub enum NameError {

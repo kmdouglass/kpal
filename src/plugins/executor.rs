@@ -1,6 +1,6 @@
 //! Executors handle all communication with plugins.
 
-use std::{ffi::CStr, sync::mpsc::channel, thread};
+use std::{collections::BTreeMap, ffi::CStr, sync::mpsc::channel, thread};
 
 use {
     libc::{c_char, c_int, c_uchar, size_t},
@@ -13,8 +13,8 @@ use kpal_plugin::{ATTRIBUTE_PRE_INIT_FALSE, ATTRIBUTE_PRE_INIT_TRUE, INIT_PHASE,
 
 use super::{
     errors::{
-        AdvancePhaseError, ExecutorError, InitError, NameError, PluginError, PreInitError,
-        SetValueError, SyncError, ValueError,
+        AdvancePhaseError, CountError, ExecutorError, IdsError, InitError, NameError, PluginError,
+        PreInitError, SetValueError, SyncError, ValueError,
     },
     messaging::{Receiver, Transmitter},
     Plugin,
@@ -81,6 +81,43 @@ impl Executor {
                 msg.handle(&mut self, &mut peripheral);
             }
         });
+    }
+
+    /// Returns the number of attributes of a Plugin.
+    pub fn attribute_count(&self) -> Result<usize, CountError> {
+        let mut count: usize = 0;
+        let result = unsafe {
+            (self.plugin.vtable.attribute_count)(self.plugin.plugin_data, &mut count as *mut size_t)
+        };
+
+        if result == PLUGIN_OK {
+            Ok(count)
+        } else {
+            Err(CountError(
+                "Could not determine the number of attributes".to_string(),
+            ))
+        }
+    }
+
+    /// Returns the set of attribute IDs of a Plugin.
+    pub fn attribute_ids(&self) -> Result<Vec<usize>, IdsError> {
+        let num_attributes = self.attribute_count().map_err(|e| {
+            let CountError(msg) = e;
+            IdsError(msg)
+        })?;
+        let mut ids = vec![0usize; num_attributes];
+
+        let result = unsafe {
+            (self.plugin.vtable.attribute_ids)(self.plugin.plugin_data, ids.as_mut_ptr(), ids.len())
+        };
+
+        if result == PLUGIN_OK {
+            Ok(ids)
+        } else {
+            Err(IdsError(
+                "Could not determine the attribute IDs".to_string(),
+            ))
+        }
     }
 
     /// Returns the name of an attribute from a Plugin.
@@ -284,7 +321,7 @@ impl Executor {
     ///
     /// * `error_code` - The integer code for which the corresponding message will be retrieved.
     unsafe fn error_message(&self, error_code: c_int) -> Result<String, PluginError> {
-        let msg_p = (self.plugin.vtable.error_message)(error_code) as *const c_char;
+        let msg_p = (self.plugin.vtable.error_message_ns)(error_code) as *const c_char;
 
         let msg = if msg_p.is_null() {
             return Err(PluginError {
@@ -311,56 +348,54 @@ impl Executor {
     /// Gets all attribute values and names from a Plugin and updates the corresponding Peripheral.
     ///
     /// This method is only called once to discover the attributes of the plugin.
-    pub fn discover_attributes(&mut self) -> Option<Vec<Attribute>> {
+    pub fn discover_attributes(&mut self) -> Option<BTreeMap<usize, Attribute>> {
+        let ids = match self.attribute_ids() {
+            Ok(ids) => ids,
+            Err(e) => {
+                log::error!("Could not discover plugin attributes: {:?}", e);
+                return None;
+            }
+        };
+
         let mut value = Val::Int(0);
-        let mut index = 0;
-        let mut attrs: Vec<Attribute> = Vec::new();
-
-        loop {
-            match self.attribute_value(index, &mut value) {
+        let mut attrs: BTreeMap<usize, Attribute> = BTreeMap::new();
+        for id in ids {
+            match self.attribute_value(id, &mut value) {
                 Ok(_) => (),
-                Err(err) => match err {
-                    ValueError::DoesNotExist(_) => break,
-                    ValueError::Failure(_) => {
-                        index += 1;
-                        continue;
-                    }
-                },
-            };
-
-            let name = match self.attribute_name(index) {
-                Ok(name) => name,
-                Err(err) => match err {
-                    NameError::DoesNotExist(_) => break,
-                    NameError::Failure(_) => {
-                        index += 1;
-                        continue;
-                    }
-                },
-            };
-
-            let pre_init = match self.attribute_pre_init(index) {
-                Ok(pre_init) => pre_init,
-                Err(err) => match err {
-                    PreInitError::DoesNotExist(_) => break,
-                    PreInitError::Failure(_) => {
-                        index += 1;
-                        continue;
-                    }
-                },
-            };
-
-            let new_attr = match Attribute::new(value.clone(), index, name, pre_init) {
-                Ok(new_attr) => new_attr,
                 Err(err) => {
-                    log::error!("Could not create new attribute: {:?}", err);
-                    index += 1;
+                    log::error!("Could not discover value of attribute {}: {:?}", id, err);
                     continue;
                 }
             };
-            attrs.push(new_attr);
 
-            index += 1;
+            let name = match self.attribute_name(id) {
+                Ok(name) => name,
+                Err(err) => {
+                    log::error!("Could not discover name of attribute {}: {:?}", id, err);
+                    continue;
+                }
+            };
+
+            let pre_init = match self.attribute_pre_init(id) {
+                Ok(pre_init) => pre_init,
+                Err(err) => {
+                    log::error!(
+                        "Could not discover pre_init status of attribute {}: {:?}",
+                        id,
+                        err
+                    );
+                    continue;
+                }
+            };
+
+            let new_attr = match Attribute::new(value.clone(), id, name, pre_init) {
+                Ok(new_attr) => new_attr,
+                Err(err) => {
+                    log::error!("Could not create new attribute: {:?}", err);
+                    continue;
+                }
+            };
+            attrs.insert(id, new_attr);
         }
 
         if attrs.is_empty() {
@@ -396,7 +431,7 @@ impl Executor {
     ///
     /// * `peripheral` - A reference to peripheral data to which the plugin will be synchronized
     pub fn sync(&mut self, peripheral: &Peripheral) -> Result<(), SyncError> {
-        for attr in peripheral.attributes() {
+        for attr in peripheral.attributes().values() {
             let value = attr.to_value()?;
             let val = value.as_val();
 
@@ -457,6 +492,35 @@ mod tests {
 
         let msg = unsafe { executor.error_message(0) };
         assert_eq!("foo", msg.unwrap());
+    }
+
+    #[test]
+    fn test_attribute_count() {
+        let (plugin, _) = set_up();
+        let executor = Executor::new(plugin);
+
+        let count = if let Ok(count) = executor.attribute_count() {
+            count
+        } else {
+            panic!("Could not obtain attribute count")
+        };
+
+        assert_eq!(1, count);
+    }
+
+    #[test]
+    fn test_attribute_ids() {
+        let (plugin, _) = set_up();
+        let executor = Executor::new(plugin);
+
+        let ids = if let Ok(ids) = executor.attribute_ids() {
+            ids
+        } else {
+            panic!("Could not obtain attribute ids")
+        };
+
+        assert_eq!(1, ids.len());
+        assert_eq!(0, ids[0]);
     }
 
     #[test]
@@ -528,7 +592,7 @@ mod tests {
         };
 
         let attrs = executor.discover_attributes().unwrap();
-        assert_eq!(attribute, attrs[0]);
+        assert_eq!(&attribute, attrs.get(&0).unwrap());
     }
 
     fn set_up() -> (Plugin, ModelPeripheral) {
@@ -536,7 +600,9 @@ mod tests {
         let vtable = VTable {
             plugin_free: def_peripheral_free,
             plugin_init: def_plugin_init,
-            error_message: def_error_message,
+            error_message_ns: def_error_message,
+            attribute_count: def_attribute_count,
+            attribute_ids: def_attribute_ids,
             attribute_name: def_attribute_name,
             attribute_pre_init: def_attribute_pre_init,
             attribute_value: def_attribute_value,
@@ -568,6 +634,24 @@ mod tests {
 
     extern "C" fn def_error_message(_: c_int) -> *const c_uchar {
         b"foo\0" as *const c_uchar
+    }
+
+    extern "C" fn def_attribute_count(_: *const PluginData, count: *mut size_t) -> c_int {
+        unsafe { *count = 1 };
+        PLUGIN_OK
+    }
+
+    extern "C" fn def_attribute_ids(
+        _: *const PluginData,
+        buffer: *mut size_t,
+        _length: size_t,
+    ) -> c_int {
+        unsafe {
+            let ids: &[usize] = &[0usize];
+            let buffer = std::slice::from_raw_parts_mut(buffer, 1);
+            buffer[0..1].copy_from_slice(ids);
+        };
+        PLUGIN_OK
     }
 
     extern "C" fn def_attribute_name(

@@ -3,21 +3,21 @@ use std::error::Error;
 use std::fmt;
 use std::slice;
 
-/// Copies a C-compatible string to a buffer.
+/// Copies a string of values of a primitive data type to a buffer.
 ///
 /// # Arguments
 ///
-/// * `string` - A reference to an array of bytes to copy
-/// * `buffer` - An array of bytes to receive the copy of the string
-/// * `length` - The length of the buffer
+/// * `string` - A reference to an string of values to copy
+/// * `buffer` - A buffer to receive the copy of the string
+/// * `length` - The length of the input buffer
 ///
 /// # Safety
 ///
 /// This function is unsafe because of its use of slice::from_raw_parts, which relies on the caller
 /// to not exceed the length of the buffer when generating the slice.
-pub unsafe fn copy_string(
-    string: &[u8],
-    buffer: *mut u8,
+pub unsafe fn copy_string<T: Copy>(
+    string: &[T],
+    buffer: *mut T,
     length: usize,
 ) -> Result<(), BufferOverflowError> {
     let buffer = slice::from_raw_parts_mut(buffer, length);

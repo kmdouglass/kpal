@@ -122,9 +122,7 @@ fn merge_attributes(periph: &mut Peripheral, lib: TSLibrary) -> Result<(), Merge
     let lib = lib.lock()?;
     let mut attrs = lib.attributes().clone();
 
-    for periph_attr in periph.attributes() {
-        let id = periph_attr.id();
-
+    for (id, periph_attr) in periph.attributes() {
         let attr = attrs.get_mut(id).ok_or_else(|| {
             MergeAttributesError::DoesNotExist(format!("Attribute does not exist: {}", id))
         })?;

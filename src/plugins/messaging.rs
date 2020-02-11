@@ -42,10 +42,9 @@ impl Message {
 
             Message::GetPeripheralAttributes(tx) => {
                 let ids = {
-                    let attrs = periph.attributes();
                     let mut ids = Vec::new();
-                    for attr in attrs {
-                        ids.push(attr.id());
+                    for id in periph.attributes().keys() {
+                        ids.push(*id);
                     }
                     ids
                 };
@@ -98,7 +97,7 @@ fn attribute_value_wrapper(
         })?;
 
     periph.set_attribute_from_value(id, value)?;
-    let attr = &periph.attributes()[id];
+    let attr = &periph.attributes()[&id];
     Ok(attr.clone())
 }
 
@@ -129,7 +128,7 @@ fn set_attribute_value_wrapper(
         })?;
 
     periph.set_attribute_from_value(id, value)?;
-    let attr = &periph.attributes()[id];
+    let attr = &periph.attributes()[&id];
     Ok(attr.clone())
 }
 

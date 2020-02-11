@@ -40,6 +40,20 @@ where
     /// Returns the attributes of the plugin.
     fn attributes(&self) -> &Attributes<Self, E>;
 
+    /// Returns the number of attributes of the plugin.
+    fn attribute_count(&self) -> usize {
+        self.attributes().borrow().iter().count()
+    }
+
+    /// Returns the attribute IDs.
+    fn attribute_ids(&self) -> Vec<usize> {
+        self.attributes()
+            .borrow()
+            .iter()
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     /// Returns the name of an attribute.
     ///
     /// If the attribute that corresponds to the `id` does not exist, then an error is
@@ -254,6 +268,13 @@ pub struct PluginData {
 }
 
 /// A table of function pointers that comprise the plugin API for the foreign function interface.
+///
+/// By default, functions in the VTable return a number that represents a status code that maps
+/// onto a particular reason for an error. All functions should use the same mapping between status
+/// code and reason.
+///
+/// Functions that return values that do not represent status codes have names that end in the
+/// characters '_ns' that stand for "no status."
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct VTable {
@@ -268,7 +289,15 @@ pub struct VTable {
     pub plugin_init: unsafe extern "C" fn(*mut PluginData) -> c_int,
 
     /// Returns an error message associated with a Plugin error code.
-    pub error_message: extern "C" fn(c_int) -> *const c_uchar,
+    pub error_message_ns: extern "C" fn(c_int) -> *const c_uchar,
+
+    /// Returns the number of attributes of the plugin.
+    pub attribute_count:
+        unsafe extern "C" fn(plugin_data: *const PluginData, count: *mut size_t) -> c_int,
+
+    /// Returns the attribute IDs in a buffer provided by the caller.
+    pub attribute_ids:
+        unsafe extern "C" fn(plugin_data: *const PluginData, ids: *mut size_t, size_t) -> c_int,
 
     /// Writes the name of an attribute to a buffer that is provided by the caller.
     pub attribute_name: unsafe extern "C" fn(
@@ -483,7 +512,9 @@ macro_rules! declare_plugin {
             let vtable = VTable {
                 plugin_free,
                 plugin_init: plugin_init::<$plugin_type, $plugin_err_type>,
-                error_message,
+                error_message_ns,
+                attribute_count: attribute_count::<$plugin_type, $plugin_err_type>,
+                attribute_ids: attribute_ids::<$plugin_type, $plugin_err_type>,
                 attribute_name: attribute_name::<$plugin_type, $plugin_err_type>,
                 attribute_pre_init: attribute_pre_init::<$plugin_type, $plugin_err_type>,
                 attribute_value: attribute_value::<$plugin_type, $plugin_err_type>,
