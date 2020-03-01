@@ -15,6 +15,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A plugin executor can no longer get stuck in an infinite loop when initializing if a plugin
   provides no attributes. This was fixed by adding two new methods to the plugin API:
   `attribute_count` and `attribute_ids`.
+- A delay was added between publishing jobs on the CI so that crates.io would have time to update
+  before subsequent crates were published.
 
 ## [0.2.0] - 2020-02-09
 ### Added

@@ -287,6 +287,8 @@ jobs:
             pushd kpal-plugin
             cargo publish
             popd
+            # Wait for kpal-plugin to become available
+            sleep 30
       - run:
           name: Publish kpal
           command: cargo publish
