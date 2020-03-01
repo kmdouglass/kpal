@@ -66,7 +66,7 @@ pub unsafe extern "C" fn plugin_init<T: PluginAPI<E>, E: PluginError + 'static>(
 /// Returns an error message to the daemon given an error code.
 ///
 /// If an undefined error code is provided, then this function will return a null pointer.
-pub extern "C" fn error_message(error_code: c_int) -> *const c_uchar {
+pub extern "C" fn error_message_ns(error_code: c_int) -> *const c_uchar {
     let error_code: size_t = match error_code.try_into() {
         Ok(error_code) => error_code,
         Err(_) => {
@@ -76,6 +76,66 @@ pub extern "C" fn error_message(error_code: c_int) -> *const c_uchar {
     };
 
     ERRORS.get(error_code).map_or(null(), |e| e.as_ptr())
+}
+
+/// Returns the number of attributes of the plugin.
+///
+/// This function returns the number of attributes rather than a status code. If this function is
+/// provided with a null pointer as an argument, then zero will be returned.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences a raw pointer.
+///
+/// # Arguments
+///
+/// * `plugin_data` - A pointer to a PluginData struct
+/// * `count` - A pointer to a size_t that will contain the number of attributes
+pub unsafe extern "C" fn attribute_count<T: PluginAPI<E>, E: PluginError + 'static>(
+    plugin_data: *const PluginData,
+    count: *mut size_t,
+) -> c_int {
+    if plugin_data.is_null() {
+        log::error!("plugin_data pointer is null");
+        return NULL_PTR_ERR;
+    };
+
+    let plugin_data = plugin_data as *const T;
+    *count = (*plugin_data).attribute_count();
+
+    PLUGIN_OK
+}
+
+/// Writes the plugin's attribute IDs to a buffer that is provided by the caller.
+///
+/// This function returns a status code that indicates whether the operation succeeded and the
+/// cause of any possible errors. It is recommended to check the status code returned by this
+/// function before reading the contents of the buffer.
+///
+/// # Safety
+///
+/// This function is unsafe because it dereferences a raw pointer.
+///
+/// # Arguments
+/// * `plugin_data` - A pointer to a PluginData struct
+/// * `buffer` - A pointer to a string of size_t's into which the attribute IDs will be written
+/// * `length` - The length of the buffer
+pub unsafe extern "C" fn attribute_ids<T: PluginAPI<E>, E: PluginError + 'static>(
+    plugin_data: *const PluginData,
+    buffer: *mut size_t,
+    length: size_t,
+) -> c_int {
+    if plugin_data.is_null() {
+        log::error!("plugin_data pointer is null");
+        return NULL_PTR_ERR;
+    }
+    let plugin_data = plugin_data as *const T;
+    let ids = (*plugin_data).attribute_ids();
+
+    match copy_string(&ids, buffer, length) {
+        Ok(_) => PLUGIN_OK,
+        Err(_) => UNDEFINED_ERR,
+    }
 }
 
 /// Writes the name of an attribute to a buffer that is provided by the caller.

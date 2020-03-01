@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2020-03-01
+### Changed
+- The method to create new peripherals now accepts a JSON object and not an array for the pre-init
+  attributes.
+- The `links` field of a peripheral JSON resource is now renamed to `attributes`. Its name in the
+  Rust code remains unchanged.
+
+### Fixed
+- A plugin executor can no longer get stuck in an infinite loop when initializing if a plugin
+  provides no attributes. This was fixed by adding two new methods to the plugin API:
+  `attribute_count` and `attribute_ids`.
+
 ## [0.2.0] - 2020-02-09
 ### Added
 - A Dockerfile was added at

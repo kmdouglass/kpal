@@ -108,7 +108,7 @@ fn load_libraries(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
         log::info!("Attempting to load library from file: {}", path);
         let lib = match Dll::new(&lib) {
             Ok(lib) => {
-                log::info!("Succeeded to load library {}", path);
+                log::info!("Loading of library {} succeeded", path);
                 lib
             }
             Err(_) => {
@@ -139,7 +139,7 @@ fn load_libraries(lib_paths: Vec<PathBuf>) -> Option<Vec<TSLibrary>> {
 
         libraries.push(Arc::new(Mutex::new(new_lib)));
         counter += 1;
-        log::info!("Initialization of {} succeeded.", path);
+        log::info!("Initialization of {} succeeded", path);
     }
 
     if !libraries.is_empty() {

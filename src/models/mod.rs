@@ -1,7 +1,7 @@
 mod errors;
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     ffi::{CStr, CString},
     slice,
 };
@@ -276,7 +276,7 @@ impl Value {
 pub struct Library {
     id: usize,
     name: String,
-    attributes: Vec<Attribute>,
+    attributes: BTreeMap<usize, Attribute>,
 
     #[serde(skip)]
     library: Option<Dll>,
@@ -296,7 +296,7 @@ impl Clone for Library {
 
 impl Library {
     pub fn new(id: usize, name: String, library: Option<Dll>) -> Library {
-        let attributes: Vec<Attribute> = Vec::new();
+        let attributes: BTreeMap<usize, Attribute> = BTreeMap::new();
         Library {
             id,
             name,
@@ -309,11 +309,11 @@ impl Library {
         &self.library
     }
 
-    pub fn attributes(&self) -> &Vec<Attribute> {
+    pub fn attributes(&self) -> &BTreeMap<usize, Attribute> {
         &self.attributes
     }
 
-    pub fn set_attributes(&mut self, attributes: Vec<Attribute>) {
+    pub fn set_attributes(&mut self, attributes: BTreeMap<usize, Attribute>) {
         self.attributes = attributes;
     }
 }
@@ -334,17 +334,17 @@ pub struct Peripheral {
     name: String,
 
     #[serde(default, skip_serializing)]
-    attributes: Vec<Attribute>,
+    attributes: BTreeMap<usize, Attribute>,
 
     #[serde(default)]
     id: usize,
 
-    #[serde(default)]
+    #[serde(default, rename = "attributes")]
     links: Vec<HashMap<String, String>>,
 }
 
 impl Peripheral {
-    pub fn attributes(&self) -> &Vec<Attribute> {
+    pub fn attributes(&self) -> &BTreeMap<usize, Attribute> {
         &self.attributes
     }
 
@@ -353,7 +353,7 @@ impl Peripheral {
     }
 
     pub fn set_attribute(&mut self, id: usize, attribute: Attribute) {
-        match self.attributes.get_mut(id) {
+        match self.attributes.get_mut(&id) {
             Some(old_attribute) => *old_attribute = attribute,
             None => {
                 log::debug!("could not set attribute; index not valid: {}", id);
@@ -361,7 +361,7 @@ impl Peripheral {
         }
     }
 
-    pub fn set_attributes(&mut self, attributes: Vec<Attribute>) {
+    pub fn set_attributes(&mut self, attributes: BTreeMap<usize, Attribute>) {
         self.attributes = attributes;
     }
 
@@ -370,14 +370,14 @@ impl Peripheral {
         id: usize,
         value: PluginValue,
     ) -> Result<(), AttributeError> {
-        let attribute = self.attributes.get_mut(id).unwrap();
+        let attribute = self.attributes.get_mut(&id).unwrap();
         *attribute = Attribute::new(value, id, attribute.name().to_owned(), attribute.pre_init())?;
         Ok(())
     }
 
     pub fn set_attribute_links(&mut self) {
-        let mut links = Vec::new();
-        for attr in &self.attributes {
+        let mut links: Vec<HashMap<String, String>> = Vec::new();
+        for attr in self.attributes.values() {
             let mut link = HashMap::new();
             link.insert(
                 "href".to_string(),
@@ -413,29 +413,33 @@ mod tests {
     use kpal_plugin::Val as PluginValue;
 
     #[test]
-    fn test_attribute_from() {
+    fn test_attribute_new() {
         let context = set_up();
-        let values = vec![
-            PluginValue::Int(context.int_value),
-            PluginValue::Double(context.float_value),
+        let cases = vec![
+            (
+                PluginValue::Int(context.int_value),
+                context.int_id,
+                context.attributes.get(&context.int_id).unwrap(),
+            ),
+            (
+                PluginValue::Double(context.float_value),
+                context.float_id,
+                context.attributes.get(&context.float_id).unwrap(),
+            ),
         ];
-        let cases = values.into_iter().zip(context.attributes);
 
-        for (value, attr) in cases {
+        for (value, id, attr) in cases {
             let converted_attr =
-                Attribute::new(value, context.id, context.name.clone(), context.pre_init).unwrap();
-            assert_eq!(attr, converted_attr);
+                Attribute::new(value, id, context.name.clone(), context.pre_init).unwrap();
+            assert_eq!(attr, &converted_attr);
         }
     }
 
     #[test]
     fn test_attribute_id() {
         let context = set_up();
-        let names = vec![context.id, context.id];
-        let cases = names.into_iter().zip(context.attributes);
 
-        for case in cases {
-            let (id, attr) = case;
+        for (id, attr) in context.attributes {
             assert_eq!(id, attr.id());
         }
     }
@@ -443,8 +447,16 @@ mod tests {
     #[test]
     fn test_attribute_name() {
         let context = set_up();
-        let names = vec![context.name.clone(), context.name.clone()];
-        let cases = names.into_iter().zip(context.attributes);
+        let cases = vec![
+            (
+                context.name.clone(),
+                context.attributes.get(&context.int_id).unwrap(),
+            ),
+            (
+                context.name.clone(),
+                context.attributes.get(&context.float_id).unwrap(),
+            ),
+        ];
 
         for case in cases {
             let (name, attr) = case;
@@ -455,9 +467,9 @@ mod tests {
     #[test]
     fn test_library_new() {
         let context = set_up();
-        let library = Library::new(context.id, context.name.clone(), None);
+        let library = Library::new(0, context.name.clone(), None);
 
-        assert_eq!(library.id, context.id);
+        assert_eq!(library.id, 0);
         assert_eq!(library.name, context.name);
         assert!(library.library.is_none());
     }
@@ -466,7 +478,7 @@ mod tests {
     fn test_library_dll() {
         let context = set_up();
         let library = Library {
-            id: context.id,
+            id: 0,
             name: context.name,
             attributes: context.attributes,
             library: None,
@@ -491,35 +503,54 @@ mod tests {
     fn test_peripheral_set_attribute() {
         let mut context = set_up();
         let new_attr = Attribute::Double {
-            id: context.id,
+            id: context.float_id,
             name: context.name,
             pre_init: context.pre_init,
             value: PI,
         };
 
-        assert_ne!(context.peripheral.attributes[0], new_attr);
+        assert_ne!(
+            context
+                .peripheral
+                .attributes
+                .get(&context.float_id)
+                .unwrap(),
+            &new_attr
+        );
 
-        context.peripheral.set_attribute(0, new_attr.clone());
-        assert_eq!(context.peripheral.attributes[0], new_attr);
+        context
+            .peripheral
+            .set_attribute(context.float_id, new_attr.clone());
+        assert_eq!(
+            context
+                .peripheral
+                .attributes
+                .get(&context.float_id)
+                .unwrap(),
+            &new_attr
+        );
     }
 
     #[test]
     fn test_peripheral_set_attributes() {
         let mut context = set_up();
         let new_attr = Attribute::Double {
-            id: context.id,
+            id: context.float_id,
             name: context.name.clone(),
             pre_init: context.pre_init,
             value: PI,
         };
+        let mut new_attrs = BTreeMap::new();
+        new_attrs.insert(context.float_id, new_attr.clone());
 
-        for attr in context.peripheral.attributes.clone() {
-            assert_ne!(attr, new_attr);
+        for attr in context.peripheral.attributes.clone().values() {
+            assert_ne!(attr, &new_attr);
         }
 
-        context.peripheral.set_attributes(vec![new_attr.clone()]);
-        for attr in context.peripheral.attributes {
+        context.peripheral.set_attributes(new_attrs);
+        for (id, attr) in context.peripheral.attributes {
             assert_eq!(attr, new_attr);
+            assert_eq!(context.float_id, id);
         }
     }
 
@@ -528,25 +559,33 @@ mod tests {
         let mut context = set_up();
         let new_value = PluginValue::Double(PI);
         let new_attr = Attribute::Double {
-            id: context.id,
+            id: context.float_id,
             name: context.name.clone(),
             pre_init: context.pre_init,
             value: PI,
         };
 
-        assert_ne!(context.peripheral.attributes[0], new_attr);
+        assert_ne!(context.peripheral.attributes.get(&0).unwrap(), &new_attr);
 
         context
             .peripheral
-            .set_attribute_from_value(0, new_value)
+            .set_attribute_from_value(context.float_id, new_value)
             .unwrap();
-        assert_eq!(context.peripheral.attributes[0], new_attr);
+        assert_eq!(
+            context
+                .peripheral
+                .attributes
+                .get(&context.float_id)
+                .unwrap(),
+            &new_attr
+        );
     }
 
     struct Context {
-        attributes: Vec<Attribute>,
+        attributes: BTreeMap<usize, Attribute>,
+        float_id: usize,
         float_value: f64,
-        id: usize,
+        int_id: usize,
         int_value: i32,
         library_id: usize,
         name: String,
@@ -555,37 +594,44 @@ mod tests {
     }
 
     fn set_up() -> Context {
-        let (id, name, int_value, float_value) = (0, String::from("foo"), 42, 42.42);
+        let (name, int_value, float_value) = (String::from("foo"), 42, 42.42);
+        let (int_id, float_id) = (0, 1);
         let library_id = 1;
         let pre_init = false;
-        let attributes = vec![
+        let mut attributes: BTreeMap<usize, Attribute> = BTreeMap::new();
+        attributes.insert(
+            int_id,
             Attribute::Int {
-                id: id,
+                id: int_id,
                 name: name.clone(),
                 pre_init,
                 value: int_value,
             },
+        );
+        attributes.insert(
+            float_id,
             Attribute::Double {
-                id: id,
+                id: float_id,
                 name: name.clone(),
                 pre_init,
                 value: float_value,
             },
-        ];
+        );
 
         let mut peripheral = Peripheral {
             library_id,
             name: name.clone(),
             attributes: attributes.clone(),
-            id,
+            id: 0,
             links: Vec::new(),
         };
         peripheral.set_attribute_links();
 
         Context {
             attributes,
+            float_id,
             float_value,
-            id,
+            int_id,
             int_value,
             library_id,
             name,

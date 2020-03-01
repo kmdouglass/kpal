@@ -70,9 +70,9 @@ curl -s \
      --data '{
          "name": "foo",
          "library_id": 0,
-         "attributes": [
-             {"id":0, "variant":"double", "value": 999.99}
-         ]
+         "attributes": {
+             "0": {"id":0, "variant":"double", "value": 999.99}
+         }
      }'
 
 # Get all the peripherals currently managed by the daemon

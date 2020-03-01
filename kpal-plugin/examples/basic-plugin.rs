@@ -285,7 +285,7 @@ mod tests {
         let mut msg: *const c_uchar;
         for case in &cases {
             log::info!("{}", case.description);
-            msg = error_message(case.error_code);
+            msg = error_message_ns(case.error_code);
 
             if case.want_null {
                 assert!(msg.is_null());
