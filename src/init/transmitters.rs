@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::plugins::messaging::Transmitter;
+use crate::plugins::Transmitter;
 
 /// A set of distinct transmitters.
 pub type Transmitters = HashMap<usize, Mutex<Transmitter>>;

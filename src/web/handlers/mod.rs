@@ -1,19 +1,26 @@
 //! The set of request handlers for the individual endpoints of the web server.
 
+mod errors;
+
 use std::sync::mpsc::channel;
 use std::sync::{Arc, RwLock};
 
 use rouille::input::json::json_input;
 use rouille::{Request, Response};
 
-use crate::constants::REQUEST_TIMEOUT;
-use crate::init::libraries::TSLibrary;
-use crate::init::transmitters::Transmitters;
-use crate::models::{Library, Model, Peripheral, Value};
-use crate::plugins::{init as init_plugin, messaging::Message};
+use crate::{
+    constants::REQUEST_TIMEOUT,
+    init::TSLibrary,
+    init::Transmitters,
+    models::{Library, Model, Peripheral, Value},
+    plugins::{init as init_plugin, Message},
+};
 
-pub use super::errors::RequestHandlerError;
-use super::errors::*;
+pub use errors::HandlerError;
+use errors::ResourceNotFoundError;
+
+/// Result type containing a HandlerError for the Err variant.
+type Result<T> = std::result::Result<T, HandlerError>;
 
 /// Handles the GET /api/v0/libraries endpoint.
 pub fn get_libraries(libs: &[TSLibrary]) -> Result<Response> {
@@ -54,7 +61,7 @@ pub fn get_peripheral(id: usize, txs: Arc<RwLock<Transmitters>>) -> Result<Respo
 
     rx.recv_timeout(REQUEST_TIMEOUT)?
         .map(|attr| Response::json(&attr))
-        .map_err(RequestHandlerError::from)
+        .map_err(HandlerError::from)
 }
 
 /// Handles the GET /api/v0/peripherals endpoint.
@@ -88,7 +95,6 @@ pub fn post_peripherals(
     let mut periph: Peripheral = json_input(&request)?;
 
     let lib = match libs.get(periph.library_id()) {
-        // Bump the reference count on the Arc that wraps this library
         Some(lib) => lib.clone(),
         None => {
             let mut response = Response::text("Library does not exist.\n");
@@ -133,7 +139,7 @@ pub fn get_peripheral_attribute(
 
     rx.recv_timeout(REQUEST_TIMEOUT)?
         .map(|attr| Response::json(&attr))
-        .map_err(RequestHandlerError::from)
+        .map_err(HandlerError::from)
 }
 
 /// Handles the PATCH /api/v0/peripherals/{id}/attributes/{attr_id} endpoint.
@@ -160,7 +166,7 @@ pub fn patch_peripheral_attribute(
 
     rx.recv_timeout(REQUEST_TIMEOUT)?
         .map(|attr| Response::json(&attr))
-        .map_err(RequestHandlerError::from)
+        .map_err(HandlerError::from)
 }
 
 /// Handles the GET /api/v0/peripherals/{id}/attributes endpoint.
@@ -180,7 +186,7 @@ pub fn get_peripheral_attributes(id: usize, txs: Arc<RwLock<Transmitters>>) -> R
 
     rx.recv_timeout(REQUEST_TIMEOUT)?
         .map(|attr| Response::json(&attr))
-        .map_err(RequestHandlerError::from)
+        .map_err(HandlerError::from)
 }
 
 /// Finds and returns the next largest integer to serve as a new peripheral ID.

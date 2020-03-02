@@ -7,8 +7,10 @@ use std::{
     sync::{MutexGuard, PoisonError, RwLockWriteGuard},
 };
 
-use crate::models::{AttributeError, ValueConversionError};
-use crate::{init::transmitters::Transmitters, models::Library};
+use crate::models::ModelError;
+use crate::{init::Transmitters, models::Library};
+
+use super::executor::ExecutorError;
 
 /// Contains information for clients about errors that occur while communicating with a plugin.
 ///
@@ -34,17 +36,8 @@ impl fmt::Display for PluginError {
     }
 }
 
-impl From<AdvancePhaseError> for PluginError {
-    fn from(_error: AdvancePhaseError) -> Self {
-        PluginError {
-            body: "Could not advance the plugin's lifecycle phase".to_string(),
-            http_status_code: 500,
-        }
-    }
-}
-
-impl From<AttributeError> for PluginError {
-    fn from(_error: AttributeError) -> Self {
+impl From<ModelError> for PluginError {
+    fn from(_error: ModelError) -> Self {
         PluginError {
             body: "Could not create attribute from value".to_string(),
             http_status_code: 500,
@@ -61,11 +54,11 @@ impl From<std::io::Error> for PluginError {
     }
 }
 
-impl From<InitError> for PluginError {
-    fn from(_error: InitError) -> Self {
+impl From<ExecutorError> for PluginError {
+    fn from(error: ExecutorError) -> Self {
         PluginError {
-            body: "Could not initialize peripheral".to_string(),
-            http_status_code: 500,
+            body: format!("{}", error),
+            http_status_code: error.http_status_code(),
         }
     }
 }
@@ -115,85 +108,6 @@ impl<'a> From<PoisonError<RwLockWriteGuard<'a, Transmitters>>> for PluginError {
     }
 }
 
-impl From<std::str::Utf8Error> for PluginError {
-    fn from(_: std::str::Utf8Error) -> Self {
-        PluginError {
-            body: "Could not convert the plugin's error message to a UTF8 string".to_string(),
-            http_status_code: 500,
-        }
-    }
-}
-
-impl From<NameError> for PluginError {
-    fn from(error: NameError) -> Self {
-        match error {
-            NameError::DoesNotExist(msg) => PluginError {
-                body: msg,
-                http_status_code: 404,
-            },
-            NameError::Failure(msg) => PluginError {
-                body: msg,
-                http_status_code: 500,
-            },
-        }
-    }
-}
-
-impl From<SyncError> for PluginError {
-    fn from(_: SyncError) -> Self {
-        PluginError {
-            body: "Could not synchronize the plugin to the peripheral data".to_string(),
-            http_status_code: 500,
-        }
-    }
-}
-
-impl From<ValueError> for PluginError {
-    fn from(error: ValueError) -> Self {
-        match error {
-            ValueError::DoesNotExist(msg) => PluginError {
-                body: msg,
-                http_status_code: 404,
-            },
-            ValueError::Failure(msg) => PluginError {
-                body: msg,
-                http_status_code: 500,
-            },
-        }
-    }
-}
-
-impl From<SetValueError> for PluginError {
-    fn from(error: SetValueError) -> Self {
-        match error {
-            SetValueError::DoesNotExist(msg) => PluginError {
-                body: msg,
-                http_status_code: 404,
-            },
-            SetValueError::Failure(msg) => PluginError {
-                body: msg,
-                http_status_code: 500,
-            },
-            SetValueError::NotSettable(msg) => PluginError {
-                body: msg,
-                http_status_code: 422,
-            },
-        }
-    }
-}
-
-/// An error returned by a failed Executor thread.
-#[derive(Debug)]
-pub struct ExecutorError {}
-
-impl Error for ExecutorError {}
-
-impl fmt::Display for ExecutorError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "The executor thread failed")
-    }
-}
-
 /// Raised when the user-provided attribute values cannot be merged into the defaults.
 #[derive(Debug)]
 pub enum MergeAttributesError {
@@ -215,104 +129,5 @@ impl fmt::Display for MergeAttributesError {
 impl<'a> From<PoisonError<MutexGuard<'a, Library>>> for MergeAttributesError {
     fn from(_error: PoisonError<MutexGuard<Library>>) -> Self {
         MergeAttributesError::Failure("The thread's mutex is poisoned.".to_string())
-    }
-}
-
-/// Represents an error which prevents the advance of the plugin's lifecycle phase.
-#[derive(Debug)]
-pub struct AdvancePhaseError {
-    pub phase: i32,
-}
-
-impl Error for AdvancePhaseError {}
-
-impl fmt::Display for AdvancePhaseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Cannot advance from current phase: {}", self.phase)
-    }
-}
-
-/// /// An error raised during the plugin's initialization routine.
-#[derive(Debug)]
-pub struct InitError {
-    pub msg: String,
-}
-
-impl Error for InitError {}
-
-impl fmt::Display for InitError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "InitError: {:?}", self)
-    }
-}
-
-/// An error raised when a plugin could not by synchronized to a peripheral.
-#[derive(Debug)]
-pub struct SyncError {
-    pub side: Box<dyn Error>,
-}
-
-impl Error for SyncError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&*self.side)
-    }
-}
-
-impl fmt::Display for SyncError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "SyncError: {:?}", self)
-    }
-}
-
-impl From<ValueConversionError> for SyncError {
-    fn from(error: ValueConversionError) -> Self {
-        SyncError {
-            side: Box::new(error),
-        }
-    }
-}
-
-/// Represents an error encountered when fetching the attribute count.
-#[derive(Debug, PartialEq)]
-pub struct CountError(pub String);
-
-/// Represents an error encountered when fetching the attribute IDs.
-#[derive(Debug, PartialEq)]
-pub struct IdsError(pub String);
-
-/// Represents the state of a result obtained by fetching a name from an attribute.
-#[derive(Debug, PartialEq)]
-pub enum NameError {
-    DoesNotExist(String),
-    Failure(String),
-}
-
-/// Represents the state of a result obtained by determining whether an attribute is pre-init.
-#[derive(Debug, PartialEq)]
-pub enum PreInitError {
-    DoesNotExist(String),
-    Failure(String),
-}
-
-/// Represents the state of a result obtained by fetching a value from an attribute.
-#[derive(Debug, PartialEq)]
-pub enum ValueError {
-    DoesNotExist(String),
-    Failure(String),
-}
-
-/// Represents the state of a result obtained by setting a value of an attribute.
-#[derive(Debug, PartialEq)]
-pub enum SetValueError {
-    DoesNotExist(String),
-    Failure(String),
-    NotSettable(String),
-}
-
-impl Error for SetValueError {}
-
-impl fmt::Display for SetValueError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "SetValueError: {:?}", self)
     }
 }

@@ -8,8 +8,8 @@ use std::sync::{Arc, RwLock};
 use log;
 use rouille::{router, Request, Response};
 
-use crate::init::libraries::TSLibrary;
-use crate::init::transmitters::Transmitters;
+use crate::init::TSLibrary;
+use crate::init::Transmitters;
 use crate::web::handlers;
 
 /// Directs a HTTP request to the appropriate handler and returns a HTTP response.
@@ -73,7 +73,7 @@ pub fn routes(request: &Request, libs: &[TSLibrary], txs: Arc<RwLock<Transmitter
     )
 }
 
-fn log_error(e: handlers::RequestHandlerError) -> Response {
+fn log_error(e: handlers::HandlerError) -> Response {
     log::error!("{}", e);
     Response::text(e.body).with_status_code(e.http_status_code)
 }

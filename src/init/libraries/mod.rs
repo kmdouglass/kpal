@@ -1,8 +1,9 @@
 //! Methods for loading and initializing plugin libraries.
+mod errors;
+
 use std::{
-    error::Error,
+    boxed::Box,
     ffi::OsStr,
-    fmt,
     fs::read_dir,
     io,
     path::{Path, PathBuf},
@@ -19,6 +20,9 @@ use crate::{
     models::Library,
     plugins::{kpal_plugin_new, Executor},
 };
+
+pub use errors::LibraryInitError;
+use errors::{NoLibrariesFoundError, NoLibrariesLoadedError};
 
 /// A thread safe version of a [Library](../models/struct.Library.html) instance.
 ///
@@ -38,21 +42,13 @@ pub fn init(dir: &Path) -> Result<Vec<TSLibrary>, LibraryInitError> {
         dir
     );
 
-    let libraries = find_libraries(&dir)
-        .map_err(|e| {
-            log::error!(
-                "Failed to load peripheral library directory {:?}: {}",
-                dir,
-                e
-            );
-            LibraryInitError
-        })?
-        .ok_or_else(|| {
-            log::error!("Could not load any libraries from {:?}", dir);
-            LibraryInitError
-        })?;
+    let libraries = find_libraries(&dir)?.ok_or_else(|| {
+        log::error!("Could not find any libraries from {:?}", dir);
+        NoLibrariesFoundError {}
+    })?;
 
-    load_libraries(libraries).ok_or_else(|| LibraryInitError)
+    load_libraries(libraries)
+        .ok_or_else(|| LibraryInitError::new(Some(Box::new(NoLibrariesLoadedError {}))))
 }
 
 /// Finds all plugin library files inside a directory.
@@ -164,30 +160,15 @@ fn init_library(lib: &Dll) -> Result<c_int, io::Error> {
 }
 
 fn init_library_attributes(lib: &mut Library) -> Result<(), LibraryInitError> {
-    let plugin: Plugin = unsafe { kpal_plugin_new(lib).map_err(|_| LibraryInitError {})? };
+    let plugin: Plugin = unsafe { kpal_plugin_new(lib)? };
     let mut executor = Executor::new(plugin);
-    let attrs = executor
-        .discover_attributes()
-        .ok_or_else(|| LibraryInitError {})?;
+    let attrs = executor.discover_attributes().ok_or_else(|| {
+        log::error!("Could not discover the plugin's attributes");
+        LibraryInitError::new(None)
+    })?;
     lib.set_attributes(attrs);
 
     Ok(())
-}
-
-/// A general error that is raised while initializing the libraries.
-#[derive(Debug)]
-pub struct LibraryInitError;
-
-impl fmt::Display for LibraryInitError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Library initialization error")
-    }
-}
-
-impl Error for LibraryInitError {
-    fn description(&self) -> &str {
-        "Failed to initialze the peripheral libraries"
-    }
 }
 
 #[cfg(test)]

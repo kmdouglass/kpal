@@ -1,69 +1,48 @@
+//! Error types for the Models module.
+
 use std::{
     boxed::Box, error::Error, ffi::FromBytesWithNulError, ffi::NulError, fmt, str::Utf8Error,
 };
 
-/// An error type that represents a failure to convert a Val to a Value.
+/// An error returned when a manipulation on a Model fails.
 #[derive(Debug)]
-pub struct AttributeError {
-    side: ValueConversionError,
+pub struct ModelError {
+    side: Option<Box<dyn Error + 'static + Send>>,
 }
 
-impl Error for AttributeError {
+impl Error for ModelError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&self.side)
+        // The `as &_` is necessary for successful type inference due to the Send trait.
+        self.side.as_ref().map(|e| e.as_ref() as &_)
     }
 }
 
-impl fmt::Display for AttributeError {
+impl fmt::Display for ModelError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "AttributeError: {:?}", self)
+        write!(f, "ModelError: {{ Cause: {:?} }}", self)
     }
 }
 
-impl From<ValueConversionError> for AttributeError {
-    fn from(error: ValueConversionError) -> Self {
-        AttributeError { side: error }
-    }
-}
-
-/// An error type that represents a failure to convert a Val to a Value.
-#[derive(Debug)]
-pub struct ValueConversionError {
-    side: Box<dyn Error>,
-}
-
-impl Error for ValueConversionError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&*self.side)
-    }
-}
-
-impl fmt::Display for ValueConversionError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ValueConversionError: {:?}", self)
-    }
-}
-
-impl From<FromBytesWithNulError> for ValueConversionError {
+impl From<FromBytesWithNulError> for ModelError {
     fn from(error: FromBytesWithNulError) -> Self {
-        ValueConversionError {
-            side: Box::new(error),
+        ModelError {
+            side: Some(Box::new(error)),
         }
     }
 }
 
-impl From<NulError> for ValueConversionError {
+impl From<NulError> for ModelError {
     fn from(error: NulError) -> Self {
-        ValueConversionError {
-            side: Box::new(error),
+        ModelError {
+            side: Some(Box::new(error)),
         }
     }
 }
 
-impl From<Utf8Error> for ValueConversionError {
+impl From<Utf8Error> for ModelError {
     fn from(error: Utf8Error) -> Self {
-        ValueConversionError {
-            side: Box::new(error),
+        ModelError {
+            side: Some(Box::new(error)),
         }
     }
 }
