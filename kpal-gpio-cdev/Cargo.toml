@@ -1,6 +1,6 @@
 [package]
 name = "kpal-gpio-cdev"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Kyle M. Douglass <kyle.m.douglass@gmail.com>"]
 edition = "2018"
 description = "A KPAL plugin for the Linux GPIO char device"
@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 env_logger = "0.7"
-kpal-plugin = { path = "../kpal-plugin", version = "0.2.0" }
+kpal-plugin = { path = "../kpal-plugin", version = "0.2.2" }
 gpio-cdev = "0.2"
 libc = "0.2"
 log = "0.4"
