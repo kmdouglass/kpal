@@ -1,6 +1,8 @@
 //! Executors handle all communication with plugins.
 
-use std::{collections::BTreeMap, ffi::CStr, sync::mpsc::channel, thread};
+mod errors;
+
+use std::{collections::BTreeMap, error::Error, ffi::CStr, sync::mpsc::channel, thread};
 
 use {
     libc::{c_char, c_int, c_uchar, size_t},
@@ -12,10 +14,6 @@ use kpal_plugin::{error_codes::*, Val};
 use kpal_plugin::{ATTRIBUTE_PRE_INIT_FALSE, ATTRIBUTE_PRE_INIT_TRUE, INIT_PHASE, RUN_PHASE};
 
 use super::{
-    errors::{
-        AdvancePhaseError, CountError, ExecutorError, IdsError, InitError, NameError, PluginError,
-        PreInitError, SetValueError, SyncError, ValueError,
-    },
     messaging::{Receiver, Transmitter},
     Plugin,
 };
@@ -23,6 +21,12 @@ use super::{
 use crate::{
     constants::*,
     models::{Attribute, Model, Peripheral},
+};
+
+pub use errors::ExecutorError;
+use errors::{
+    AdvancePhaseError, CountError, IdsError, InitError, NameError, PreInitError, SetValueError,
+    ValueError,
 };
 
 /// Executes tasks on a Plugin in response to messages.
@@ -76,15 +80,21 @@ impl Executor {
             log::info!("Spawning new thread for plugin: {:?}", self.plugin);
 
             loop {
-                log::debug!("Checking for messages for peripheral: {}", peripheral.id());
-                let msg = self.rx.recv().map_err(|_| ExecutorError {})?;
+                log::debug!("Checking for messages for plugin: {}", peripheral.id());
+                let msg = self.rx.recv().map_err(|e| {
+                    ExecutorError::new(
+                        "Failed to read from plugin's channel".to_string(),
+                        500,
+                        Some(Box::new(e)),
+                    )
+                })?;
                 msg.handle(&mut self, &mut peripheral);
             }
         });
     }
 
     /// Returns the number of attributes of a Plugin.
-    pub fn attribute_count(&self) -> Result<usize, CountError> {
+    pub fn attribute_count(&self) -> Result<usize, ExecutorError> {
         let mut count: usize = 0;
         let result = unsafe {
             (self.plugin.vtable.attribute_count)(self.plugin.plugin_data, &mut count as *mut size_t)
@@ -93,18 +103,15 @@ impl Executor {
         if result == PLUGIN_OK {
             Ok(count)
         } else {
-            Err(CountError(
-                "Could not determine the number of attributes".to_string(),
-            ))
+            Err(CountError("Could not determine the number of attributes".to_string()).into())
         }
     }
 
     /// Returns the set of attribute IDs of a Plugin.
-    pub fn attribute_ids(&self) -> Result<Vec<usize>, IdsError> {
-        let num_attributes = self.attribute_count().map_err(|e| {
-            let CountError(msg) = e;
-            IdsError(msg)
-        })?;
+    pub fn attribute_ids(&self) -> Result<Vec<usize>, ExecutorError> {
+        let num_attributes = self
+            .attribute_count()
+            .map_err(|_| IdsError("Could not determine the number of attributes".to_string()))?;
         let mut ids = vec![0usize; num_attributes];
 
         let result = unsafe {
@@ -114,9 +121,7 @@ impl Executor {
         if result == PLUGIN_OK {
             Ok(ids)
         } else {
-            Err(IdsError(
-                "Could not determine the attribute IDs".to_string(),
-            ))
+            Err(IdsError("Could not determine the attribute IDs".to_string()).into())
         }
     }
 
@@ -125,7 +130,7 @@ impl Executor {
     /// # Arguments
     ///
     /// * `id` - The attribute's unique ID
-    pub fn attribute_name(&self, id: size_t) -> Result<String, NameError> {
+    pub fn attribute_name(&self, id: size_t) -> Result<String, ExecutorError> {
         let mut name = [0u8; ATTRIBUTE_NAME_BUFFER_LENGTH];
 
         let result = unsafe {
@@ -161,7 +166,7 @@ impl Executor {
                 self.error_message(result)
                     .unwrap_or_else(|_| String::from(""))
             };
-            Err(NameError::DoesNotExist(msg))
+            Err(NameError::DoesNotExist(msg).into())
         } else {
             log::error!(
                 "Received error code while getting attribute name: {}",
@@ -171,7 +176,7 @@ impl Executor {
                 self.error_message(result)
                     .unwrap_or_else(|_| String::from(""))
             };
-            Err(NameError::Failure(msg))
+            Err(NameError::Failure(msg).into())
         }
     }
 
@@ -180,7 +185,7 @@ impl Executor {
     /// # Arguments
     ///
     /// * `id` - The attribute's unique ID
-    pub fn attribute_pre_init(&self, id: size_t) -> Result<bool, PreInitError> {
+    pub fn attribute_pre_init(&self, id: size_t) -> Result<bool, ExecutorError> {
         let mut pre_init: c_char = 0;
 
         let result = unsafe {
@@ -200,7 +205,8 @@ impl Executor {
             } else {
                 Err(PreInitError::Failure(
                     "Could not determine error message from plugin".to_string(),
-                ))
+                )
+                .into())
             }
         } else if result == ATTRIBUTE_DOES_NOT_EXIST {
             log::debug!("Attribute does not exist: {}", result);
@@ -209,7 +215,7 @@ impl Executor {
                     String::from("Could not determine error message from plugin")
                 })
             };
-            Err(PreInitError::DoesNotExist(msg))
+            Err(PreInitError::DoesNotExist(msg).into())
         } else {
             log::error!(
                 "Received error code while determining whether the attribute is pre-init: {}",
@@ -220,7 +226,7 @@ impl Executor {
                     String::from("Could not determine error message from plugin")
                 })
             };
-            Err(PreInitError::Failure(msg))
+            Err(PreInitError::Failure(msg).into())
         }
     }
 
@@ -230,7 +236,7 @@ impl Executor {
     ///
     /// * `id` - The attribute's unique ID
     /// * `value` - A reference to a value instance into which the attribute's value will be copied
-    pub fn attribute_value(&self, id: size_t, value: &mut Val) -> Result<(), ValueError> {
+    pub fn attribute_value(&self, id: size_t, value: &mut Val) -> Result<(), ExecutorError> {
         let result = unsafe {
             (self.plugin.vtable.attribute_value)(
                 self.plugin.plugin_data,
@@ -249,7 +255,7 @@ impl Executor {
                 self.error_message(result)
                     .unwrap_or_else(|_| String::from(""))
             };
-            Err(ValueError::DoesNotExist(msg))
+            Err(ValueError::DoesNotExist(msg).into())
         } else {
             log::error!(
                 "Received error code while fetching attribute value: {}",
@@ -259,7 +265,7 @@ impl Executor {
                 self.error_message(result)
                     .unwrap_or_else(|_| String::from(""))
             };
-            Err(ValueError::Failure(msg))
+            Err(ValueError::Failure(msg).into())
         }
     }
 
@@ -270,7 +276,7 @@ impl Executor {
     /// * `id` - The attribute's unique ID
     /// * `value` - A reference to a value instance that will be copied into the plugin
     /// * `phase` - The lifecycle phase of the plugin that determines which callbacks to use
-    pub fn set_attribute_value(&self, id: size_t, value: &Val) -> Result<(), SetValueError> {
+    pub fn set_attribute_value(&self, id: size_t, value: &Val) -> Result<(), ExecutorError> {
         let result = unsafe {
             (self.plugin.vtable.set_attribute_value)(
                 self.plugin.plugin_data,
@@ -284,19 +290,19 @@ impl Executor {
             log::debug!("Set value: {:?}", value);
             Ok(())
         } else if result == ATTRIBUTE_DOES_NOT_EXIST {
-            log::debug!("Attribute does not exist: {}", result);
+            log::debug!("Attribute does not exist: {}", id);
             let msg = unsafe {
                 self.error_message(result)
                     .unwrap_or_else(|_| String::from(""))
             };
-            Err(SetValueError::DoesNotExist(msg))
+            Err(SetValueError::DoesNotExist(msg).into())
         } else if result == ATTRIBUTE_IS_NOT_SETTABLE {
-            log::debug!("Attribute is not settable: {}", result);
+            log::debug!("Attribute is not settable: {}", id);
             let msg = unsafe {
                 self.error_message(result)
                     .unwrap_or_else(|_| String::from(""))
             };
-            Err(SetValueError::NotSettable(msg))
+            Err(SetValueError::NotSettable(msg).into())
         } else {
             log::error!(
                 "Received error code while setting attribute value: {}",
@@ -306,7 +312,7 @@ impl Executor {
                 self.error_message(result)
                     .unwrap_or_else(|_| String::from(""))
             };
-            Err(SetValueError::Failure(msg))
+            Err(SetValueError::Failure(msg).into())
         }
     }
 
@@ -320,14 +326,15 @@ impl Executor {
     /// # Arguments
     ///
     /// * `error_code` - The integer code for which the corresponding message will be retrieved.
-    unsafe fn error_message(&self, error_code: c_int) -> Result<String, PluginError> {
+    unsafe fn error_message(&self, error_code: c_int) -> Result<String, ExecutorError> {
         let msg_p = (self.plugin.vtable.error_message_ns)(error_code) as *const c_char;
 
         let msg = if msg_p.is_null() {
-            return Err(PluginError {
-                body: "An unrecognized error code was provided to the plugin".to_string(),
-                http_status_code: 500,
-            });
+            return Err(ExecutorError::new(
+                "An unrecognized error code was provided to the plugin".to_string(),
+                500,
+                None,
+            ));
         } else {
             CStr::from_ptr(msg_p).to_str()?.to_owned()
         };
@@ -336,13 +343,13 @@ impl Executor {
     }
 
     /// Advances the plugin to the next lifecycle phase.
-    pub fn advance(&mut self) -> Result<i32, AdvancePhaseError> {
+    pub fn advance(&mut self) -> Result<i32, ExecutorError> {
         if self.phase == INIT_PHASE {
             self.phase = RUN_PHASE;
             return Ok(self.phase);
         }
 
-        Err(AdvancePhaseError { phase: self.phase })
+        Err(AdvancePhaseError(self.phase).into())
     }
 
     /// Gets all attribute values and names from a Plugin and updates the corresponding Peripheral.
@@ -406,7 +413,7 @@ impl Executor {
     }
 
     /// Initializes the plugin.
-    pub fn init(&self) -> Result<(), InitError> {
+    pub fn init(&self) -> Result<(), ExecutorError> {
         let result = unsafe { (self.plugin.vtable.plugin_init)(self.plugin.plugin_data) };
 
         if result == PLUGIN_OK {
@@ -421,7 +428,7 @@ impl Executor {
                 self.error_message(result)
                     .unwrap_or_else(|_| String::from(""))
             };
-            Err(InitError { msg })
+            Err(InitError(msg).into())
         }
     }
 
@@ -430,22 +437,29 @@ impl Executor {
     /// # Arguments
     ///
     /// * `peripheral` - A reference to peripheral data to which the plugin will be synchronized
-    pub fn sync(&mut self, peripheral: &Peripheral) -> Result<(), SyncError> {
+    pub fn sync(&mut self, peripheral: &Peripheral) -> Result<(), ExecutorError> {
         for attr in peripheral.attributes().values() {
             let value = attr.to_value()?;
             let val = value.as_val();
 
             if let Err(err) = self.set_attribute_value(attr.id(), &val) {
-                match err {
+                println!("{:?}", err.source());
+                let source = match err.source() {
+                    Some(source) => source,
+                    None => return Err(err),
+                };
+
+                let side: &SetValueError = match source.downcast_ref() {
+                    Some(side) => side,
+                    None => return Err(err),
+                };
+
+                match side {
                     SetValueError::NotSettable(_) => {
                         log::debug!("Skipping synchronization of attribute: {}", attr.id());
                         continue;
                     }
-                    _ => {
-                        return Err(SyncError {
-                            side: Box::new(err),
-                        })
-                    }
+                    _ => return Err(err),
                 }
             };
         }
@@ -526,26 +540,30 @@ mod tests {
     #[test]
     fn test_attribute_name() {
         let (mut plugin, _) = set_up();
-        let cases: Vec<(Result<String, NameError>, AttributeName)> = vec![
+        let cases: Vec<(Result<String, ExecutorError>, AttributeName)> = vec![
             (Ok(String::from("")), attribute_name_ok),
             (
-                Err(NameError::DoesNotExist(String::from("foo"))),
+                Err(NameError::DoesNotExist(String::from("foo")).into()),
                 attribute_name_does_not_exist,
             ),
             (
-                Err(NameError::Failure(String::from("foo"))),
+                Err(NameError::Failure(String::from("foo")).into()),
                 attribute_name_failure,
             ),
         ];
 
-        let mut result: Result<String, NameError>;
+        let mut result: Result<String, ExecutorError>;
         let mut executor: Executor;
         for (expected, case) in cases {
             plugin.vtable.attribute_name = case;
             executor = Executor::new(plugin.clone());
 
             result = executor.attribute_name(0);
-            assert_eq!(expected, result);
+            match (expected, result) {
+                (Ok(exp), Ok(res)) => assert_eq!(exp, res),
+                (Err(exp), Err(res)) => assert_eq!(exp, res),
+                _ => panic!("Result types differ"),
+            }
         }
 
         tear_down(plugin);
@@ -554,21 +572,21 @@ mod tests {
     #[test]
     fn test_attribute_value() {
         let (mut plugin, _) = set_up();
-        let cases: Vec<(Result<(), ValueError>, AttributeValue)> = vec![
+        let cases: Vec<(Result<(), ExecutorError>, AttributeValue)> = vec![
             (Ok(()), attribute_value_ok),
             (
-                Err(ValueError::DoesNotExist(String::from("foo"))),
+                Err(ValueError::DoesNotExist(String::from("foo")).into()),
                 attribute_value_does_not_exist,
             ),
             (
-                Err(ValueError::Failure(String::from("foo"))),
+                Err(ValueError::Failure(String::from("foo")).into()),
                 attribute_value_failure,
             ),
         ];
 
         let mut executor: Executor;
         let mut value = Val::Int(0);
-        let mut result: Result<(), ValueError>;
+        let mut result: Result<(), ExecutorError>;
         for (expected, case) in cases {
             plugin.vtable.attribute_value = case;
             executor = Executor::new(plugin.clone());

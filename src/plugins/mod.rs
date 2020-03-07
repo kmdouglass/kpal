@@ -7,7 +7,7 @@
 
 mod errors;
 mod executor;
-pub mod messaging;
+mod messaging;
 
 use std::{
     mem::{discriminant, MaybeUninit},
@@ -20,12 +20,14 @@ use log;
 use kpal_plugin::error_codes::PLUGIN_OK;
 use kpal_plugin::{KpalPluginInit, Plugin};
 
-use crate::init::libraries::TSLibrary;
-use crate::init::transmitters::Transmitters;
+use crate::init::TSLibrary;
+use crate::init::Transmitters;
 use crate::models::{Library, Model, Peripheral};
 
-pub use errors::*;
+use errors::MergeAttributesError;
+pub use errors::PluginError;
 pub use executor::Executor;
+pub use messaging::*;
 
 /// Initializes a new plugin.
 ///

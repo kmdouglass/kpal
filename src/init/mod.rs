@@ -1,21 +1,19 @@
 //! Routines for initializing the daemon.
-pub mod libraries;
-pub mod transmitters;
+mod errors;
+mod libraries;
+mod transmitters;
 
-use std::boxed::Box;
-use std::error::Error;
-use std::fmt;
-use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::sync::RwLock;
+use std::{net::SocketAddr, path::PathBuf, sync::RwLock};
 
 use dirs::home_dir;
 use lazy_static::lazy_static;
 use structopt::StructOpt;
 
-use libraries::TSLibrary;
-
 use crate::constants::{KPAL_DIR, LIBRARY_DIR};
+
+pub use errors::InitError;
+pub use libraries::TSLibrary;
+pub use transmitters::Transmitters;
 
 lazy_static! {
     static ref DEFAULT_LIBRARY_DIR: String = {
@@ -62,8 +60,7 @@ pub struct Init {
 ///
 /// * `args` - The command line arguments that were passed to the daemon at startup.
 pub fn init(args: &Cli) -> Result<Init> {
-    let libraries =
-        libraries::init(&args.library_dir).map_err(|e| InitError { side: Box::new(e) })?;
+    let libraries = libraries::init(&args.library_dir)?;
     let transmitters = RwLock::new(transmitters::init());
 
     Ok(Init {
@@ -74,25 +71,3 @@ pub fn init(args: &Cli) -> Result<Init> {
 
 /// A Result that is returned by this module.
 pub type Result<T> = std::result::Result<T, InitError>;
-
-/// Raised  when an error occurs during the daemon's initialization.
-#[derive(Debug)]
-pub struct InitError {
-    side: Box<dyn Error>,
-}
-
-impl Error for InitError {
-    fn description(&self) -> &str {
-        "Failed to initialize the daemon"
-    }
-
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&*self.side)
-    }
-}
-
-impl fmt::Display for InitError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "InitError {{ Cause: {} }}", &*self.side)
-    }
-}

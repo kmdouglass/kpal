@@ -1,3 +1,4 @@
+//! Models represent the core abstractions of KPAL.
 mod errors;
 
 use std::{
@@ -11,8 +12,9 @@ use serde::{Deserialize, Serialize};
 
 use kpal_plugin::Val as PluginValue;
 
-pub use errors::*;
+pub use errors::ModelError;
 
+/// A model represents one of the system's core abstractions.
 pub trait Model {
     fn id(&self) -> usize;
 
@@ -116,7 +118,7 @@ impl Attribute {
         id: usize,
         name: String,
         pre_init: bool,
-    ) -> Result<Attribute, ValueConversionError> {
+    ) -> Result<Attribute, ModelError> {
         match value {
             PluginValue::Int(value) => Ok(Attribute::Int {
                 id,
@@ -153,7 +155,7 @@ impl Attribute {
     }
 
     /// Returns a new value instance that is created from an attribute.
-    pub fn to_value(&self) -> Result<Value, ValueConversionError> {
+    pub fn to_value(&self) -> Result<Value, ModelError> {
         let value = match self {
             Attribute::Int { value, .. } => Value::Int { value: *value },
             Attribute::Double { value, .. } => Value::Double { value: *value },
@@ -237,37 +239,6 @@ impl PartialEq for Attribute {
                 },
             ) => id1 == id2 && value1 == value2,
             (_, _) => false,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "variant")]
-/// A Value represents the current value of an Attribute.
-///
-/// This enum is used to translate between values received from requests to update an attribute's
-/// state and values understood by the plugin API.
-pub enum Value {
-    #[serde(rename(serialize = "integer", deserialize = "integer"))]
-    Int { value: i32 },
-    #[serde(rename(serialize = "double", deserialize = "double"))]
-    Double { value: f64 },
-    #[serde(rename(serialize = "string", deserialize = "string"))]
-    String { value: CString },
-    #[serde(rename(serialize = "unsigned_integer", deserialize = "unsigned_integer"))]
-    Uint { value: u32 },
-}
-
-impl Value {
-    pub fn as_val(&self) -> PluginValue {
-        match self {
-            Value::Int { value } => PluginValue::Int(*value),
-            Value::Double { value } => PluginValue::Double(*value),
-            Value::String { value } => {
-                let slice = value.as_bytes_with_nul();
-                PluginValue::String(slice.as_ptr(), slice.len())
-            }
-            Value::Uint { value } => PluginValue::Uint(*value),
         }
     }
 }
@@ -369,7 +340,7 @@ impl Peripheral {
         &mut self,
         id: usize,
         value: PluginValue,
-    ) -> Result<(), AttributeError> {
+    ) -> Result<(), ModelError> {
         let attribute = self.attributes.get_mut(&id).unwrap();
         *attribute = Attribute::new(value, id, attribute.name().to_owned(), attribute.pre_init())?;
         Ok(())
@@ -401,6 +372,37 @@ impl Model for Peripheral {
 
     fn key() -> &'static str {
         "peripherals"
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "variant")]
+/// A Value represents the current value of an Attribute.
+///
+/// This enum is used to translate between values received from requests to update an attribute's
+/// state and values understood by the plugin API.
+pub enum Value {
+    #[serde(rename(serialize = "integer", deserialize = "integer"))]
+    Int { value: i32 },
+    #[serde(rename(serialize = "double", deserialize = "double"))]
+    Double { value: f64 },
+    #[serde(rename(serialize = "string", deserialize = "string"))]
+    String { value: CString },
+    #[serde(rename(serialize = "unsigned_integer", deserialize = "unsigned_integer"))]
+    Uint { value: u32 },
+}
+
+impl Value {
+    pub fn as_val(&self) -> PluginValue {
+        match self {
+            Value::Int { value } => PluginValue::Int(*value),
+            Value::Double { value } => PluginValue::Double(*value),
+            Value::String { value } => {
+                let slice = value.as_bytes_with_nul();
+                PluginValue::String(slice.as_ptr(), slice.len())
+            }
+            Value::Uint { value } => PluginValue::Uint(*value),
+        }
     }
 }
 
