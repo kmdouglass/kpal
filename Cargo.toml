@@ -1,6 +1,6 @@
 [package]
 name = "kpal"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Kyle M. Douglass <kyle.douglass@protonmail.com>"]
 edition = "2018"
 description = "An extensible and RESTful control system for physical computing"
@@ -19,7 +19,7 @@ members = [
 ]
 
 [dependencies]
-kpal-plugin = { path = "kpal-plugin", version = "0.2.0" }
+kpal-plugin = { path = "kpal-plugin", version = "0.2.2" }
 dirs = "2.0"
 env_logger = "0.7"
 lazy_static = "1.3"
