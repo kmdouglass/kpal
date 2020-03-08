@@ -417,7 +417,7 @@ impl Executor {
         let result = unsafe { (self.plugin.vtable.plugin_init)(self.plugin.plugin_data) };
 
         if result == PLUGIN_OK {
-            log::debug!("Plugin's initialzation routine ran successfully.");
+            log::debug!("Plugin's initialzation routine ran successfully");
             Ok(())
         } else {
             log::error!(
