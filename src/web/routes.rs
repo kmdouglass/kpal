@@ -26,7 +26,7 @@ pub fn routes(request: &Request, libs: &[TSLibrary], txs: Arc<RwLock<Transmitter
             (GET) (/) => {
                 log::info!("GET /");
 
-                Response::text("Kyle's Peripheral Abstraction Layer (KPAL)")
+                Response::empty_204()
             },
 
             (GET) (/api/v0/libraries) => {
@@ -75,5 +75,5 @@ pub fn routes(request: &Request, libs: &[TSLibrary], txs: Arc<RwLock<Transmitter
 
 fn log_error(e: handlers::HandlerError) -> Response {
     log::error!("{}", e);
-    Response::text(e.body).with_status_code(e.http_status_code)
+    Response::json(&e).with_status_code(e.http_status_code)
 }

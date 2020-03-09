@@ -85,7 +85,7 @@ pub fn init(
 /// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
 pub unsafe fn kpal_plugin_new(lib: &Library) -> Result<Plugin, PluginError> {
     let dll = lib.dll().as_ref().ok_or(PluginError {
-        body: "Could not obtain reference to the plugin's shared library".to_string(),
+        message: "Could not obtain reference to the plugin's shared library".to_string(),
         http_status_code: 500,
     })?;
 
@@ -97,7 +97,7 @@ pub unsafe fn kpal_plugin_new(lib: &Library) -> Result<Plugin, PluginError> {
     if result != PLUGIN_OK {
         log::error!("Plugin initialization failed: {}", result);
         return Err(PluginError {
-            body: "Could not initialize plugin".to_string(),
+            message: "Could not initialize plugin".to_string(),
             http_status_code: 500,
         });
     }
