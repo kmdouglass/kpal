@@ -21,8 +21,8 @@ use super::executor::ExecutorError;
 /// the client about why the requested operation failed.
 #[derive(Debug)]
 pub struct PluginError {
-    /// The body of the HTTP response to return to the client.
-    pub body: String,
+    /// The message of the HTTP response to return to the client.
+    pub message: String,
 
     /// The HTTP status code that should be returned to the client.
     pub http_status_code: u16,
@@ -39,7 +39,7 @@ impl fmt::Display for PluginError {
 impl From<ModelError> for PluginError {
     fn from(_error: ModelError) -> Self {
         PluginError {
-            body: "Could not create attribute from value".to_string(),
+            message: "Could not create attribute from value".to_string(),
             http_status_code: 500,
         }
     }
@@ -48,7 +48,7 @@ impl From<ModelError> for PluginError {
 impl From<std::io::Error> for PluginError {
     fn from(_error: std::io::Error) -> Self {
         PluginError {
-            body: "Could not get symbol from shared library".to_string(),
+            message: "Could not get symbol from shared library".to_string(),
             http_status_code: 500,
         }
     }
@@ -57,7 +57,7 @@ impl From<std::io::Error> for PluginError {
 impl From<ExecutorError> for PluginError {
     fn from(error: ExecutorError) -> Self {
         PluginError {
-            body: format!("{}", error),
+            message: format!("{}", error),
             http_status_code: error.http_status_code(),
         }
     }
@@ -67,23 +67,23 @@ impl From<MergeAttributesError> for PluginError {
     fn from(error: MergeAttributesError) -> Self {
         match error {
             MergeAttributesError::DoesNotExist(msg) => PluginError {
-                body: msg,
+                message: msg,
                 http_status_code: 404,
             },
             MergeAttributesError::Failure(msg) => PluginError {
-                body: msg,
+                message: msg,
                 http_status_code: 500,
             },
             MergeAttributesError::IsNotPreInit(msg) => PluginError {
-                body: msg,
+                message: msg,
                 http_status_code: 422,
             },
             MergeAttributesError::UnknownVariant(msg) => PluginError {
-                body: msg,
+                message: msg,
                 http_status_code: 500,
             },
             MergeAttributesError::VariantMismatch(msg) => PluginError {
-                body: msg,
+                message: msg,
                 http_status_code: 422,
             },
         }
@@ -93,7 +93,7 @@ impl From<MergeAttributesError> for PluginError {
 impl<'a> From<PoisonError<MutexGuard<'a, Library>>> for PluginError {
     fn from(_error: PoisonError<MutexGuard<Library>>) -> Self {
         PluginError {
-            body: "The Mutex on the library is poisoned".to_string(),
+            message: "The Mutex on the library is poisoned".to_string(),
             http_status_code: 500,
         }
     }
@@ -102,7 +102,7 @@ impl<'a> From<PoisonError<MutexGuard<'a, Library>>> for PluginError {
 impl<'a> From<PoisonError<RwLockWriteGuard<'a, Transmitters>>> for PluginError {
     fn from(_error: PoisonError<RwLockWriteGuard<Transmitters>>) -> Self {
         PluginError {
-            body: "The RwLock on the transmitters collection is poisoned".to_string(),
+            message: "The RwLock on the transmitters collection is poisoned".to_string(),
             http_status_code: 500,
         }
     }
