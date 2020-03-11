@@ -188,57 +188,39 @@ impl Model for Attribute {
 impl Eq for Attribute {}
 
 impl PartialEq for Attribute {
+    #[rustfmt::skip]
     fn eq(&self, other: &Attribute) -> bool {
         match (self, other) {
             (
-                Attribute::Int {
-                    id: id1,
-                    value: value1,
-                    ..
-                },
-                Attribute::Int {
-                    id: id2,
-                    value: value2,
-                    ..
-                },
+                Attribute::Int { id: id1, value: value1, .. },
+                Attribute::Int { id: id2, value: value2, .. },
             ) => id1 == id2 && value1 == value2,
             (
-                Attribute::Double {
-                    id: id1,
-                    value: value1,
-                    ..
-                },
-                Attribute::Double {
-                    id: id2,
-                    value: value2,
-                    ..
-                },
+                Attribute::Double { id: id1, value: value1, .. },
+                Attribute::Double { id: id2, value: value2, .. },
             ) => id1 == id2 && value1 == value2,
             (
-                Attribute::String {
-                    id: id1,
-                    value: value1,
-                    ..
-                },
-                Attribute::String {
-                    id: id2,
-                    value: value2,
-                    ..
-                },
+                Attribute::String { id: id1, value: value1, .. },
+                Attribute::String { id: id2, value: value2, .. },
             ) => id1 == id2 && value1 == value2,
             (
-                Attribute::Uint {
-                    id: id1,
-                    value: value1,
-                    ..
-                },
-                Attribute::Uint {
-                    id: id2,
-                    value: value2,
-                    ..
-                },
+                Attribute::Uint { id: id1, value: value1, .. },
+                Attribute::Uint { id: id2, value: value2, .. },
             ) => id1 == id2 && value1 == value2,
-            (_, _) => false,
+            // List all invalid matches so the compiler will remind us to update this function when
+            // new variants are added
+            ( Attribute::Int { .. }, Attribute::Double { .. } )
+            | ( Attribute::Int { .. }, Attribute::String { .. } )
+            | ( Attribute::Int { .. }, Attribute::Uint { .. } )
+            | ( Attribute::Double { .. }, Attribute::Int { .. } )
+            | ( Attribute::Double { .. }, Attribute::String { .. } )
+            | ( Attribute::Double { .. }, Attribute::Uint { .. } )
+            | ( Attribute::String { .. }, Attribute::Int { .. } )
+            | ( Attribute::String { .. }, Attribute::Double { .. } )
+            | ( Attribute::String { .. }, Attribute::Uint { .. } )
+            | ( Attribute::Uint { .. }, Attribute::Int { .. } )
+            | ( Attribute::Uint { .. }, Attribute::Double { .. } )
+            | ( Attribute::Uint { .. }, Attribute::String { .. } ) => false,
         }
     }
 }

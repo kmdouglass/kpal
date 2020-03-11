@@ -151,7 +151,7 @@ where
     /// # Arguments
     ///
     /// * `id` - the numeric ID of the attribute
-    /// * `val` - a reference to a Val instance
+    /// * `val` - a reference to a Val instance containing the attribute's new value
     /// * `phase` - the lifecycle phase of the plugin that determines which callbacks to use
     fn attribute_set_value(&self, id: usize, val: &Val, phase: Phase) -> Result<(), E> {
         log::debug!("Received request to set the value of attribute: {}", id);
@@ -177,15 +177,9 @@ where
             return Err(E::new(error_codes::LIFECYCLE_PHASE_ERR));
         };
 
+        // Call the set callback on the attribute's values.
         if let Some(set) = option_set {
-            // This MUST be updated each time a new variant is added to the Value and Val enums.
-            let result = match (&attribute.value, &val) {
-                (Value::Int(_), Val::Int(_))
-                | (Value::Double(_), Val::Double(_))
-                | (Value::String(_), Val::String(_, _))
-                | (Value::Uint(_), Val::Uint(_)) => set(&self, &attribute.value, val),
-                _ => Err(E::new(error_codes::ATTRIBUTE_TYPE_MISMATCH)),
-            };
+            let result = set_helper(self, &attribute.value, val, set);
 
             result.map_err(|err| {
                 log::error!("Callback error {{ id: {:?}, error: {:?} }}", id, err);
@@ -204,6 +198,45 @@ where
         })?;
 
         Ok(())
+    }
+}
+
+/// Convenience function that calls a set callback only for valid (Value, Val) pairs.
+///
+/// # Arguments
+///
+/// * `plugin` - A reference to the plugin object that contains the plugins data
+/// * `value` - A reference to an attribute's current value
+/// * `val` - A reference to the attribute's desired, new value
+/// * `set` - The callback function that will perform the value update
+fn set_helper<T, E: Error + PluginError + 'static>(
+    plugin: &T,
+    value: &Value,
+    val: &Val,
+    set: fn(&T, &Value, &Val) -> Result<(), E>,
+) -> Result<(), E> {
+    let err = Err(E::new(error_codes::ATTRIBUTE_TYPE_MISMATCH));
+
+    // The full range is listed so the compiler will remind you to update this function when a new
+    // variant is added.
+    match (value, val) {
+        (Value::Int(_), Val::Int(_))
+        | (Value::Double(_), Val::Double(_))
+        | (Value::String(_), Val::String(_, _))
+        | (Value::Uint(_), Val::Uint(_)) => set(plugin, value, val),
+        // Invalid inputs
+        (Value::Int(_), Val::Double(_)) => err,
+        (Value::Int(_), Val::String(_, _)) => err,
+        (Value::Int(_), Val::Uint(_)) => err,
+        (Value::Double(_), Val::Int(_)) => err,
+        (Value::Double(_), Val::String(_, _)) => err,
+        (Value::Double(_), Val::Uint(_)) => err,
+        (Value::String(_), Val::Int(_)) => err,
+        (Value::String(_), Val::Double(_)) => err,
+        (Value::String(_), Val::Uint(_)) => err,
+        (Value::Uint(_), Val::Int(_)) => err,
+        (Value::Uint(_), Val::Double(_)) => err,
+        (Value::Uint(_), Val::String(_, _)) => err,
     }
 }
 
