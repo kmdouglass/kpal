@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt};
 
-pub static ERRORS: [&[u8]; 12] = [
+pub static ERRORS: [&[u8]; 13] = [
     // 0 PLUGIN_OK
     b"Plugin OK\0",
     // 1 UNDEFINED_ERR
@@ -19,13 +19,15 @@ pub static ERRORS: [&[u8]; 12] = [
     b"IO operation failed\0",
     // 7 NUMERIC_CONVERSION_ERR
     b"Could not convert numeric value into a different type\0",
-    // 8 NULL_PTR_ERR
+    // 8 STRING_CONVERSION_ERR
+    b"Could not convert string into a different encoding\0",
+    // 9 NULL_PTR_ERR
     b"The plugin encountered a null pointer\0",
-    // 9 CALLBACK_ERR
+    // 10 CALLBACK_ERR
     b"The plugin attribute's callback failed\0",
-    // 10 UPDATE_CACHED_VALUE_ERR
+    // 11 UPDATE_CACHED_VALUE_ERR
     b"Could not update plugin attribute's cached value\0",
-    // 11 LIFECYCLE_PHASE_ERR
+    // 12 LIFECYCLE_PHASE_ERR
     b"Unrecognized lifecycle phase\0",
 ];
 
@@ -56,8 +58,9 @@ pub mod error_codes {
     pub const ATTRIBUTE_IS_NOT_SETTABLE: c_int = 5;
     pub const IO_ERR: c_int = 6;
     pub const NUMERIC_CONVERSION_ERR: c_int = 7;
-    pub const NULL_PTR_ERR: c_int = 8;
-    pub const CALLBACK_ERR: c_int = 9;
-    pub const UPDATE_CACHED_VALUE_ERR: c_int = 10;
-    pub const LIFECYCLE_PHASE_ERR: c_int = 11;
+    pub const STRING_CONVERSION_ERR: c_int = 8;
+    pub const NULL_PTR_ERR: c_int = 9;
+    pub const CALLBACK_ERR: c_int = 10;
+    pub const UPDATE_CACHED_VALUE_ERR: c_int = 11;
+    pub const LIFECYCLE_PHASE_ERR: c_int = 12;
 }

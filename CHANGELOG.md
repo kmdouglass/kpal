@@ -4,10 +4,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2020-03-09
+## [Unreleased] - 2020-03-12
+### Added
+- A new error code was added to the `kpal-plugin` crate called `STRING_CONVERSION_ERR`.
+
 ### Changed
 - The integration tests were refactored and expanded to cover more use cases.
 - JSON, not text, is now returned in HTTP error responses.
+- The internal handling of matches on pairs of enums was redone. This has no effect on users, but
+  for developers the compiler should now be able to remind you when you forget to update methods
+  involving matches on pairs after introducing a new enum variant for `Attribute`, `Value`, etc.
+  
+### Fixed
+- `kpal-gpio-cdev` now returns the correct `PLUGIN_INIT_ERR` error code when the plugin fails to
+  initialize. Previously it was returning `NUMERIC_CONVERSION_ERR`.
 
 ## [0.2.2] - 2020-03-07
 ### Changed

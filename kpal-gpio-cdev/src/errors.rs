@@ -77,7 +77,7 @@ impl From<std::convert::Infallible> for GPIOPluginError {
 impl From<std::ffi::IntoStringError> for GPIOPluginError {
     fn from(error: std::ffi::IntoStringError) -> GPIOPluginError {
         GPIOPluginError {
-            error_code: UNDEFINED_ERR,
+            error_code: STRING_CONVERSION_ERR,
             side: Some(Box::new(error)),
         }
     }
@@ -95,7 +95,7 @@ impl From<std::num::TryFromIntError> for GPIOPluginError {
 impl From<PluginUninitializedError> for GPIOPluginError {
     fn from(error: PluginUninitializedError) -> GPIOPluginError {
         GPIOPluginError {
-            error_code: NUMERIC_CONVERSION_ERR,
+            error_code: PLUGIN_INIT_ERR,
             side: Some(Box::new(error)),
         }
     }
