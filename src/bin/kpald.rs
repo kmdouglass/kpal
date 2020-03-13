@@ -6,7 +6,7 @@ use log;
 use structopt::StructOpt;
 
 use kpal::init::{init, Cli, Init};
-use kpal::web::routes;
+use kpal::integrations::rest::routes;
 
 fn main() {
     env_logger::init();

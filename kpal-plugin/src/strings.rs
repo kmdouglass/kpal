@@ -61,6 +61,7 @@ mod tests {
         let bytes = string.to_bytes_with_nul();
 
         unsafe {
+            #[allow(clippy::match_wild_err_arm)]
             match copy_string(&bytes, buffer_p, buffer.len()) {
                 Ok(_) => (),
                 Err(_e) => panic!("Failed to copy string to buffer"),
