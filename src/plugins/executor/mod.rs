@@ -20,7 +20,8 @@ use super::{
 
 use crate::{
     constants::*,
-    models::{Attribute, Model, Peripheral},
+    integrations::ErrorReason,
+    models::{Attribute, Model, Peripheral, PeripheralBuilder},
 };
 
 pub use errors::ExecutorError;
@@ -84,7 +85,7 @@ impl Executor {
                 let msg = self.rx.recv().map_err(|e| {
                     ExecutorError::new(
                         "Failed to read from plugin's channel".to_string(),
-                        500,
+                        ErrorReason::InternalError,
                         Some(Box::new(e)),
                     )
                 })?;
@@ -332,7 +333,7 @@ impl Executor {
         let msg = if msg_p.is_null() {
             return Err(ExecutorError::new(
                 "An unrecognized error code was provided to the plugin".to_string(),
-                500,
+                ErrorReason::UnprocessableRequest,
                 None,
             ));
         } else {
@@ -437,13 +438,12 @@ impl Executor {
     /// # Arguments
     ///
     /// * `peripheral` - A reference to peripheral data to which the plugin will be synchronized
-    pub fn sync(&mut self, peripheral: &Peripheral) -> Result<(), ExecutorError> {
-        for attr in peripheral.attributes().values() {
+    pub fn sync(&mut self, builder: &PeripheralBuilder) -> Result<(), ExecutorError> {
+        for attr in builder.attributes().values() {
             let value = attr.to_value()?;
             let val = value.as_val();
 
             if let Err(err) = self.set_attribute_value(attr.id(), &val) {
-                println!("{:?}", err.source());
                 let source = match err.source() {
                     Some(source) => source,
                     None => return Err(err),
@@ -478,7 +478,7 @@ mod tests {
 
     use kpal_plugin::{Phase, Plugin, PluginData, VTable, Val};
 
-    use crate::models::Peripheral as ModelPeripheral;
+    use crate::models::{Peripheral, PeripheralBuilder};
 
     type AttributeName = extern "C" fn(*const PluginData, size_t, *mut c_uchar, size_t) -> c_int;
     type AttributeValue = extern "C" fn(*const PluginData, size_t, *mut Val, Phase) -> c_int;
@@ -602,18 +602,13 @@ mod tests {
     fn test_discover_attributes() {
         let (plugin, _) = set_up();
         let mut executor = Executor::new(plugin);
-        let attribute = Attribute::Int {
-            id: 0,
-            name: String::from("bar"),
-            pre_init: true,
-            value: 42,
-        };
+        let attribute = Attribute::new(Val::Int(42), 0, String::from("bar"), true);
 
         let attrs = executor.discover_attributes().unwrap();
-        assert_eq!(&attribute, attrs.get(&0).unwrap());
+        assert_eq!(&attribute.unwrap(), attrs.get(&0).unwrap());
     }
 
-    fn set_up() -> (Plugin, ModelPeripheral) {
+    fn set_up() -> (Plugin, Peripheral) {
         let plugin_data = Box::into_raw(Box::new(MockPluginData {})) as *mut PluginData;
         let vtable = VTable {
             plugin_free: def_peripheral_free,
@@ -631,8 +626,8 @@ mod tests {
             vtable,
         };
 
-        let model: ModelPeripheral =
-            serde_json::from_str(r#"{"name":"foo","library_id":0}"#).unwrap();
+        let builder: PeripheralBuilder = PeripheralBuilder::new(0, "foo".to_string());
+        let model = builder.set_id(0).build().unwrap();
 
         (plugin, model)
     }

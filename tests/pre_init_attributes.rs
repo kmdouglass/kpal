@@ -1,8 +1,6 @@
 //! Integration test that verifies that values may be set on pre-init attributes.
 pub mod common;
 
-use std::collections::HashMap;
-
 use {
     log, reqwest,
     serde::{Deserialize, Serialize},
@@ -23,20 +21,18 @@ fn test_pre_init_attributes() {
     let expected = Attribute {
         id: 0,
         name: "x".to_string(),
-        pre_init: true,
-        value: 0.0,
-        variant: "double".to_string(),
+        value: ValueRead {
+            value: 0.0,
+            r#type: "double".to_string(),
+        },
     };
 
-    let mut attributes = HashMap::new();
-    attributes.insert(
-        0,
-        Value {
-            id: 0,
-            variant: "double",
-            value: 999.99,
-        },
-    );
+    let mut attributes = Vec::new();
+    attributes.push(ValueCreate {
+        id: 0,
+        r#type: "double",
+        value: 999.99,
+    });
     let post_data_pre_init = PostData {
         name: "bar",
         library_id: 0,
@@ -45,9 +41,10 @@ fn test_pre_init_attributes() {
     let expected_pre_init = Attribute {
         id: 0,
         name: "x".to_string(),
-        pre_init: true,
-        value: 999.99,
-        variant: "double".to_string(),
+        value: ValueRead {
+            value: 999.99,
+            r#type: "double".to_string(),
+        },
     };
 
     #[rustfmt::skip]
@@ -141,7 +138,7 @@ struct PostData<T> {
     library_id: usize,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    attributes: Option<HashMap<usize, Value<T>>>,
+    attributes: Option<Vec<ValueCreate<T>>>,
 }
 
 /// Represents an attribute returned by the daemon.
@@ -149,15 +146,20 @@ struct PostData<T> {
 struct Attribute {
     id: usize,
     name: String,
-    pre_init: bool,
-    variant: String,
-    value: f64,
+    value: ValueRead,
 }
 
 /// Represents an attribute value.
 #[derive(Debug, Serialize)]
-struct Value<T> {
+struct ValueCreate<T> {
     id: usize,
-    variant: &'static str,
+    r#type: &'static str,
     value: T,
+}
+
+/// Represents a value returned by the daemon.
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+struct ValueRead {
+    r#type: String,
+    value: f64,
 }

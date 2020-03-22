@@ -9,7 +9,7 @@ use {
 use common::{set_up, tear_down, CommonError, Get, Patch, Post, Request};
 
 #[test]
-fn test_pre_init_attributes() {
+fn test_patch_string_attributes() {
     let context = set_up().expect("Setup failed");
     log::debug!("{:?}", context);
 
@@ -21,22 +21,24 @@ fn test_pre_init_attributes() {
         library_id: 0,
     };
     let patch_data = PatchData {
-        variant: "string",
+        r#type: "string",
         value: "helloworld",
     };
     let expected_before_patch = Attribute {
         id: attribute_id,
         name: "msg".to_string(),
-        pre_init: false,
-        value: "foobar".to_string(),
-        variant: "string".to_string(),
+        value: Value {
+            value: "foobar".to_string(),
+            r#type: "string".to_string(),
+        },
     };
     let expected_after_patch = Attribute {
         id: attribute_id,
         name: "msg".to_string(),
-        pre_init: false,
-        value: "helloworld".to_string(),
-        variant: "string".to_string(),
+        value: Value {
+            value: "helloworld".to_string(),
+            r#type: "string".to_string(),
+        },
     };
 
     #[rustfmt::skip]
@@ -144,7 +146,7 @@ struct PostData {
 /// Patch data to update an attribute value.
 #[derive(Debug, Serialize)]
 struct PatchData<T> {
-    variant: &'static str,
+    r#type: &'static str,
     value: T,
 }
 
@@ -153,7 +155,12 @@ struct PatchData<T> {
 struct Attribute {
     id: usize,
     name: String,
-    pre_init: bool,
-    variant: String,
+    value: Value,
+}
+
+/// Represents a value returned by the daemon.
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+struct Value {
+    r#type: String,
     value: String,
 }

@@ -1,8 +1,4 @@
-//! The endpoints of the web server.
-//!
-//! The user API is defined in this module. It is a REST API whose endpoints correspond to the
-//! resources of the object model (peripherals, libraries, etc.).
-
+//! The endpoints of the REST API.
 use std::sync::{Arc, RwLock};
 
 use log;
@@ -10,7 +6,8 @@ use rouille::{router, Request, Response};
 
 use crate::init::TSLibrary;
 use crate::init::Transmitters;
-use crate::web::handlers;
+
+use super::handlers;
 
 /// Directs a HTTP request to the appropriate handler and returns a HTTP response.
 ///
@@ -18,7 +15,7 @@ use crate::web::handlers;
 ///
 /// * `request` - The object containing the information concerning the client's request
 /// * `libs` The set of libraries that is currently open by the daemon
-/// * `transmitters` The set of transmitters for sending messages into each peripheral thread
+/// * `txs` The set of transmitters for sending messages into each peripheral thread
 #[allow(clippy::cognitive_complexity)]
 pub fn routes(request: &Request, libs: &[TSLibrary], txs: Arc<RwLock<Transmitters>>) -> Response {
     router!(request,
@@ -49,6 +46,7 @@ pub fn routes(request: &Request, libs: &[TSLibrary], txs: Arc<RwLock<Transmitter
                 handlers::post_peripherals(&request, libs, txs.clone()).unwrap_or_else(log_error)
             },
 
+
             (GET) (/api/v0/peripherals/{id: usize}) => {
                 log::info!("GET /api/v0/peripherals/{}", id);
                 handlers::get_peripheral(id, txs.clone()).unwrap_or_else(log_error)
@@ -73,7 +71,7 @@ pub fn routes(request: &Request, libs: &[TSLibrary], txs: Arc<RwLock<Transmitter
     )
 }
 
-fn log_error(e: handlers::HandlerError) -> Response {
+fn log_error(e: handlers::RestHandlerError) -> Response {
     log::error!("{}", e);
     Response::json(&e).with_status_code(e.http_status_code)
 }

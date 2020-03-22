@@ -70,9 +70,9 @@ curl -s \
      --data '{
          "name": "foo",
          "library_id": 0,
-         "attributes": {
-             "0": {"id":0, "variant":"double", "value": 999.99}
-         }
+         "attributes": [
+             {"id":0, "type":"double", "value": 999.99}
+         ]
      }'
 
 # Get all the peripherals currently managed by the daemon
@@ -92,7 +92,7 @@ curl -s \
      --request PATCH \
      localhost:8000/api/v0/peripherals/0/attributes/0 \
      --header "Content-Type: application/json" \
-     --data '{"variant":"double","value":42}'
+     --data '{"type":"double","value":42}'
 ```
 
 ## Core components

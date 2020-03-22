@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2020-03-12
+## [Unreleased] - 2020-03-22
 ### Added
 - A new error code was added to the `kpal-plugin` crate called `STRING_CONVERSION_ERR`.
+- A new module called `integrations` was added. Its purpose is to make it easier to create
+  different types of user APIs and to decouple the KPAL models from their input/output
+  representations.
 
 ### Changed
 - The integration tests were refactored and expanded to cover more use cases.

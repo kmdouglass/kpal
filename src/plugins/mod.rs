@@ -20,9 +20,11 @@ use log;
 use kpal_plugin::error_codes::PLUGIN_OK;
 use kpal_plugin::{KpalPluginInit, Plugin};
 
-use crate::init::TSLibrary;
-use crate::init::Transmitters;
-use crate::models::{Library, Model, Peripheral};
+use crate::{
+    init::{TSLibrary, Transmitters},
+    integrations::ErrorReason,
+    models::{Library, Model, PeripheralBuilder},
+};
 
 use errors::MergeAttributesError;
 pub use errors::PluginError;
@@ -37,7 +39,7 @@ pub use messaging::*;
 /// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
 /// * `txs` - The set of transmitters currently known to the daemon
 pub fn init(
-    peripheral: &mut Peripheral,
+    builder: PeripheralBuilder,
     lib: TSLibrary,
     txs: Arc<RwLock<Transmitters>>,
 ) -> std::result::Result<(), PluginError> {
@@ -48,18 +50,19 @@ pub fn init(
 
     let mut executor = Executor::new(plugin);
 
-    // Set any pre-init attributes
-    merge_attributes(peripheral, lib)?;
-    peripheral.set_attribute_links();
+    log::debug!("Setting user-specified pre-init attributes");
+    let builder = set_attributes(builder, lib)?;
 
     log::debug!("Synchronizing the plugin with daemon's peripheral data");
-    executor.sync(peripheral)?;
+    executor.sync(&builder)?;
 
     log::debug!("Running the plugin's initialization routine");
     executor.init()?;
 
     log::debug!("Advancing the lifetime phase of the plugin");
     executor.advance()?;
+
+    let peripheral = builder.build()?;
 
     // Insert the transmitter into the collection of Transmitters only after we have initialized
     // everything successfully. Otherwise, we may insert a channel into the collection which will
@@ -68,7 +71,7 @@ pub fn init(
     txs.write()?.insert(peripheral.id(), tx);
 
     log::debug!("Launching the plugin executor");
-    executor.run(peripheral.clone());
+    executor.run(peripheral);
 
     Ok(())
 }
@@ -84,9 +87,12 @@ pub fn init(
 ///
 /// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
 pub unsafe fn kpal_plugin_new(lib: &Library) -> Result<Plugin, PluginError> {
-    let dll = lib.dll().as_ref().ok_or(PluginError {
-        message: "Could not obtain reference to the plugin's shared library".to_string(),
-        http_status_code: 500,
+    let dll = lib.dll().as_ref().ok_or_else(|| {
+        PluginError::new(
+            "Could not obtain reference to the plugin's shared library".to_string(),
+            ErrorReason::InternalError,
+            None,
+        )
     })?;
 
     let kpal_plugin_new: Symbol<KpalPluginInit> = dll.get(b"kpal_plugin_new\0")?;
@@ -96,71 +102,70 @@ pub unsafe fn kpal_plugin_new(lib: &Library) -> Result<Plugin, PluginError> {
 
     if result != PLUGIN_OK {
         log::error!("Plugin initialization failed: {}", result);
-        return Err(PluginError {
-            message: "Could not initialize plugin".to_string(),
-            http_status_code: 500,
-        });
+        return Err(PluginError::new(
+            "Could not initialize plugin".to_string(),
+            ErrorReason::InternalError,
+            None,
+        ));
     }
 
     Ok(plugin.assume_init())
 }
 
-/// Merge the attributes of the library model into those of the peripheral.
-///
-/// This function enables users to set attribute values before a plugin is initialized. It takes
-/// the attribute values that are input from the user, which is stored in the peripheral instance,
-/// and merges it into the list of attributes that the library provides. Then, it replaces the list
-/// of attributes inside the peripheral instance with this updated list.
-///
-/// This method must be updated anytime a new attribute variant is added.
+/// Set the peripheral attributes, skipping any that are pre-init and have been set by the user.
 ///
 /// # Arguments
 ///
-/// * `periph` - The peripheral whose attributes will be merged into those from the library
-/// * `lib` - The library that provides the default set of attributes
-fn merge_attributes(periph: &mut Peripheral, lib: TSLibrary) -> Result<(), MergeAttributesError> {
-    use crate::models::Attribute::*;
-
+/// * `builder` - The peripheral builder to which attributes will be added.
+/// * `lib` - The plugin library that controls the peripheral
+fn set_attributes(
+    mut builder: PeripheralBuilder,
+    lib: TSLibrary,
+) -> Result<PeripheralBuilder, MergeAttributesError> {
     let lib = lib.lock()?;
-    let mut attrs = lib.attributes().clone();
+    let lib_attrs = lib.attributes().clone();
 
-    for (id, periph_attr) in periph.attributes() {
-        let attr = attrs.get_mut(id).ok_or_else(|| {
-            MergeAttributesError::DoesNotExist(format!("Attribute does not exist: {}", id))
-        })?;
+    for (id, attr) in lib_attrs {
+        // Build all attributes that were provided with initial values from the user.
+        let periph_attr = if let Some(mut attr_builder) = builder.attribute_builder(id) {
+            attr_builder = attr_builder
+                .set_name(attr.name().to_owned())
+                .set_pre_init(attr.pre_init());
 
-        if discriminant(attr) != discriminant(periph_attr) {
-            return Err(MergeAttributesError::VariantMismatch(format!(
-                "Provided variant does not match plugin attribute: {}",
-                id
-            )));
+            Some(attr_builder.build()?)
+        } else {
+            None
         };
 
-        let err = MergeAttributesError::IsNotPreInit(
-            "Attribute cannot be set before initialization".to_string(),
-        );
-        #[rustfmt::skip]
-        match (attr, periph_attr) {
-            (Int { pre_init, value: old_value, .. }, Int { value: new_value, .. }) => {
-                if !(*pre_init) { return Err(err); }
-                *old_value = *new_value
-            }
-            (Double { pre_init, value: old_value, .. }, Double { value: new_value, .. }) => {
-                if !(*pre_init) { return Err(err); }
-                *old_value = *new_value
-            }
-            (String { pre_init, value: old_value, .. }, String { value: new_value, .. }) => {
-                if !(*pre_init) { return Err(err); }
-                *old_value = new_value.clone()
-            }
-            (_, _) => {
-                return Err(MergeAttributesError::UnknownVariant(
-                    "The daemon does not know how to merge this variant".to_string(),
-                ))
-            }
+        if let Some(periph_attr) = periph_attr {
+            // Verify that user-provided values are valid.
+            if discriminant(attr.value()) != discriminant(periph_attr.value()) {
+                return Err(MergeAttributesError::VariantMismatch(format!(
+                    "Provided attribute variant does not match library's: attribute id {}",
+                    id
+                )));
+            };
+
+            if !periph_attr.pre_init() {
+                return Err(MergeAttributesError::IsNotPreInit(format!(
+                    "Attribute cannot be set before initialization: attribute id {}",
+                    id
+                )));
+            };
+
+            log::debug!(
+                "Setting attribute using value provided by the client: {:?}",
+                periph_attr
+            );
+            builder = builder.set_attribute(periph_attr)
+        } else {
+            log::debug!(
+                "Setting attribute using value provided by the library: {:?}",
+                attr
+            );
+            builder = builder.set_attribute(attr);
         };
     }
 
-    periph.set_attributes(attrs);
-    Ok(())
+    Ok(builder)
 }

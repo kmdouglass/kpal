@@ -2,16 +2,16 @@
 mod errors;
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     ffi::{CStr, CString},
     slice,
 };
 
 use libloading::Library as Dll;
-use serde::{Deserialize, Serialize};
 
 use kpal_plugin::Val as PluginValue;
 
+use errors::BuilderPartiallyInitializedError;
 pub use errors::ModelError;
 
 /// A model represents one of the system's core abstractions.
@@ -21,87 +21,16 @@ pub trait Model {
     fn key() -> &'static str;
 }
 
-/// Attributes partially represent the complete state of a peripheral.
-///
-/// id and value are currenly the only fields that are deserialized because attributes are only
-/// sent once during the lifetime of a peripheral before it is initialized. At this time, only id a
-/// value are needed.
-#[derive(Clone, Deserialize, Debug, Serialize)]
-#[serde(tag = "variant")]
-pub enum Attribute {
-    #[serde(rename(serialize = "integer", deserialize = "integer"))]
-    Int {
-        id: usize,
-
-        #[serde(default)]
-        name: String,
-
-        #[serde(default)]
-        pre_init: bool,
-
-        value: i32,
-    },
-
-    #[serde(rename(serialize = "double", deserialize = "double"))]
-    Double {
-        id: usize,
-
-        #[serde(default)]
-        name: String,
-
-        #[serde(default)]
-        pre_init: bool,
-
-        value: f64,
-    },
-
-    #[serde(rename(serialize = "string", deserialize = "string"))]
-    String {
-        id: usize,
-
-        #[serde(default)]
-        name: String,
-
-        #[serde(default)]
-        pre_init: bool,
-
-        value: String,
-    },
-    #[serde(rename(serialize = "unsigned_integer", deserialize = "unsigned_integer"))]
-    Uint {
-        id: usize,
-
-        #[serde(default)]
-        name: String,
-
-        #[serde(default)]
-        pre_init: bool,
-
-        value: u32,
-    },
+/// Attributes represent part of the entire state of a peripheral.
+#[derive(Clone, Debug)]
+pub struct Attribute {
+    id: usize,
+    name: String,
+    pre_init: bool,
+    value: Value,
 }
 
 impl Attribute {
-    /// Returns the name of an attribute.
-    pub fn name(&self) -> &str {
-        match self {
-            Attribute::Int { name, .. } => name,
-            Attribute::Double { name, .. } => name,
-            Attribute::String { name, .. } => name,
-            Attribute::Uint { name, .. } => name,
-        }
-    }
-
-    /// Indicates whether an attribute's value may be modified before peripheral initialization.
-    pub fn pre_init(&self) -> bool {
-        match self {
-            Attribute::Int { pre_init, .. } => *pre_init,
-            Attribute::Double { pre_init, .. } => *pre_init,
-            Attribute::String { pre_init, .. } => *pre_init,
-            Attribute::Uint { pre_init, .. } => *pre_init,
-        }
-    }
-
     /// Creates a new Attribute instance from a PluginValue.
     ///
     /// This function makes it easier to convert PluginValues, which are returned from the
@@ -120,64 +49,74 @@ impl Attribute {
         pre_init: bool,
     ) -> Result<Attribute, ModelError> {
         match value {
-            PluginValue::Int(value) => Ok(Attribute::Int {
+            PluginValue::Int(value) => Ok(Attribute {
                 id,
                 name,
                 pre_init,
-                value,
+                value: Value::Int { value },
             }),
-            PluginValue::Double(value) => Ok(Attribute::Double {
+            PluginValue::Double(value) => Ok(Attribute {
                 id,
                 name,
                 pre_init,
-                value,
+                value: Value::Double { value },
             }),
             PluginValue::String(p_value, length) => {
                 let value = unsafe {
                     let slice = slice::from_raw_parts(p_value, length);
                     let string = CStr::from_bytes_with_nul(slice)?.to_str()?;
-                    string.to_owned()
+                    CString::new(string.to_owned())?
                 };
-                Ok(Attribute::String {
+                Ok(Attribute {
                     id,
                     name,
                     pre_init,
-                    value,
+                    value: Value::String { value },
                 })
             }
-            PluginValue::Uint(value) => Ok(Attribute::Uint {
+            PluginValue::Uint(value) => Ok(Attribute {
                 id,
                 name,
                 pre_init,
-                value,
+                value: Value::Uint { value },
             }),
         }
     }
 
+    /// Returns the name of an attribute.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Indicates whether an attribute's value may be modified before peripheral initialization.
+    pub fn pre_init(&self) -> bool {
+        self.pre_init
+    }
+
     /// Returns a new value instance that is created from an attribute.
     pub fn to_value(&self) -> Result<Value, ModelError> {
-        let value = match self {
-            Attribute::Int { value, .. } => Value::Int { value: *value },
-            Attribute::Double { value, .. } => Value::Double { value: *value },
-            Attribute::String { value, .. } => {
+        let value = match &self.value {
+            Value::Int { value, .. } => Value::Int { value: *value },
+            Value::Double { value, .. } => Value::Double { value: *value },
+            Value::String { value, .. } => {
                 let c_string = CString::new(value.clone())?;
                 Value::String { value: c_string }
             }
-            Attribute::Uint { value, .. } => Value::Uint { value: *value },
+            Value::Uint { value, .. } => Value::Uint { value: *value },
         };
 
         Ok(value)
+    }
+
+    /// Returns a reference to the Attribute't value.
+    pub fn value(&self) -> &Value {
+        &self.value
     }
 }
 
 impl Model for Attribute {
     fn id(&self) -> usize {
-        match self {
-            Attribute::Int { id, .. } => *id,
-            Attribute::Double { id, .. } => *id,
-            Attribute::String { id, .. } => *id,
-            Attribute::Uint { id, .. } => *id,
-        }
+        self.id
     }
 
     fn key() -> &'static str {
@@ -188,51 +127,59 @@ impl Model for Attribute {
 impl Eq for Attribute {}
 
 impl PartialEq for Attribute {
-    #[rustfmt::skip]
     fn eq(&self, other: &Attribute) -> bool {
-        match (self, other) {
-            (
-                Attribute::Int { id: id1, value: value1, .. },
-                Attribute::Int { id: id2, value: value2, .. },
-            ) => id1 == id2 && value1 == value2,
-            (
-                Attribute::Double { id: id1, value: value1, .. },
-                Attribute::Double { id: id2, value: value2, .. },
-            ) => id1 == id2 && value1 == value2,
-            (
-                Attribute::String { id: id1, value: value1, .. },
-                Attribute::String { id: id2, value: value2, .. },
-            ) => id1 == id2 && value1 == value2,
-            (
-                Attribute::Uint { id: id1, value: value1, .. },
-                Attribute::Uint { id: id2, value: value2, .. },
-            ) => id1 == id2 && value1 == value2,
-            // List all invalid matches so the compiler will remind us to update this function when
-            // new variants are added
-            ( Attribute::Int { .. }, Attribute::Double { .. } )
-            | ( Attribute::Int { .. }, Attribute::String { .. } )
-            | ( Attribute::Int { .. }, Attribute::Uint { .. } )
-            | ( Attribute::Double { .. }, Attribute::Int { .. } )
-            | ( Attribute::Double { .. }, Attribute::String { .. } )
-            | ( Attribute::Double { .. }, Attribute::Uint { .. } )
-            | ( Attribute::String { .. }, Attribute::Int { .. } )
-            | ( Attribute::String { .. }, Attribute::Double { .. } )
-            | ( Attribute::String { .. }, Attribute::Uint { .. } )
-            | ( Attribute::Uint { .. }, Attribute::Int { .. } )
-            | ( Attribute::Uint { .. }, Attribute::Double { .. } )
-            | ( Attribute::Uint { .. }, Attribute::String { .. } ) => false,
-        }
+        self.id == other.id && self.name == other.name
     }
 }
 
-#[derive(Deserialize, Debug, Serialize)]
-pub struct Library {
+#[derive(Debug)]
+pub struct AttributeBuilder {
     id: usize,
-    name: String,
-    attributes: BTreeMap<usize, Attribute>,
+    name: Option<String>,
+    pre_init: Option<bool>,
+    value: Value,
+}
 
-    #[serde(skip)]
+impl AttributeBuilder {
+    pub fn new(id: usize, value: Value) -> AttributeBuilder {
+        AttributeBuilder {
+            id,
+            name: None,
+            pre_init: None,
+            value,
+        }
+    }
+
+    pub fn build(self) -> Result<Attribute, ModelError> {
+        Ok(Attribute {
+            id: self.id,
+            name: self.name.ok_or(BuilderPartiallyInitializedError())?,
+            pre_init: self.pre_init.ok_or(BuilderPartiallyInitializedError())?,
+            value: self.value,
+        })
+    }
+
+    pub fn id(&self) -> &usize {
+        &self.id
+    }
+
+    pub fn set_name(mut self, name: String) -> AttributeBuilder {
+        self.name = Some(name);
+        self
+    }
+
+    pub fn set_pre_init(mut self, pre_init: bool) -> AttributeBuilder {
+        self.pre_init = Some(pre_init);
+        self
+    }
+}
+
+#[derive(Debug)]
+pub struct Library {
+    attributes: BTreeMap<usize, Attribute>,
+    id: usize,
     library: Option<Dll>,
+    name: String,
 }
 
 impl Clone for Library {
@@ -266,6 +213,10 @@ impl Library {
         &self.attributes
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn set_attributes(&mut self, attributes: BTreeMap<usize, Attribute>) {
         self.attributes = attributes;
     }
@@ -281,19 +232,12 @@ impl Model for Library {
     }
 }
 
-#[derive(Clone, Deserialize, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Peripheral {
+    attributes: BTreeMap<usize, Attribute>,
+    id: usize,
     library_id: usize,
     name: String,
-
-    #[serde(default, skip_serializing)]
-    attributes: BTreeMap<usize, Attribute>,
-
-    #[serde(default)]
-    id: usize,
-
-    #[serde(default, rename = "attributes")]
-    links: Vec<HashMap<String, String>>,
 }
 
 impl Peripheral {
@@ -305,17 +249,8 @@ impl Peripheral {
         self.library_id
     }
 
-    pub fn set_attribute(&mut self, id: usize, attribute: Attribute) {
-        match self.attributes.get_mut(&id) {
-            Some(old_attribute) => *old_attribute = attribute,
-            None => {
-                log::debug!("could not set attribute; index not valid: {}", id);
-            }
-        }
-    }
-
-    pub fn set_attributes(&mut self, attributes: BTreeMap<usize, Attribute>) {
-        self.attributes = attributes;
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn set_attribute_from_value(
@@ -326,20 +261,6 @@ impl Peripheral {
         let attribute = self.attributes.get_mut(&id).unwrap();
         *attribute = Attribute::new(value, id, attribute.name().to_owned(), attribute.pre_init())?;
         Ok(())
-    }
-
-    pub fn set_attribute_links(&mut self) {
-        let mut links: Vec<HashMap<String, String>> = Vec::new();
-        for attr in self.attributes.values() {
-            let mut link = HashMap::new();
-            link.insert(
-                "href".to_string(),
-                format!("/api/v0/peripherals/{}/attributes/{}", self.id, attr.id()),
-            );
-            links.push(link);
-        }
-
-        self.links = links;
     }
 
     pub fn set_id(&mut self, id: usize) {
@@ -357,20 +278,83 @@ impl Model for Peripheral {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "variant")]
+pub struct PeripheralBuilder {
+    attributes: BTreeMap<usize, Attribute>,
+    attribute_builders: BTreeMap<usize, AttributeBuilder>,
+    id: Option<usize>,
+    library_id: usize,
+    name: String,
+}
+
+impl PeripheralBuilder {
+    pub fn new(library_id: usize, name: String) -> PeripheralBuilder {
+        PeripheralBuilder {
+            attributes: BTreeMap::new(),
+            attribute_builders: BTreeMap::new(),
+            id: None,
+            library_id,
+            name,
+        }
+    }
+
+    pub fn build(self) -> Result<Peripheral, ModelError> {
+        if !self.attribute_builders.is_empty() {
+            return Err(BuilderPartiallyInitializedError().into());
+        }
+
+        Ok(Peripheral {
+            attributes: self.attributes,
+            id: self.id.ok_or(BuilderPartiallyInitializedError())?,
+            library_id: self.library_id,
+            name: self.name,
+        })
+    }
+
+    pub fn attribute(&self, id: usize) -> Option<&Attribute> {
+        self.attributes.get(&id)
+    }
+
+    pub fn attributes(&self) -> &BTreeMap<usize, Attribute> {
+        &self.attributes
+    }
+
+    /// Returns an owned instance of the AttributeBuilder with the given ID.
+    ///
+    /// Note that this will remove the AttributeBuilder from the collection that is owned by
+    /// instances of the PeripheralBuilder struct. Calling this method on all AttributeBuilders
+    /// will empty the collection.
+    pub fn attribute_builder(&mut self, id: usize) -> Option<AttributeBuilder> {
+        self.attribute_builders.remove(&id)
+    }
+
+    pub fn library_id(&self) -> &usize {
+        &self.library_id
+    }
+
+    pub fn set_attribute(mut self, attr: Attribute) -> PeripheralBuilder {
+        let id = attr.id();
+        self.attributes.insert(id, attr);
+        self
+    }
+
+    pub fn set_attribute_builder(mut self, builder: AttributeBuilder) -> PeripheralBuilder {
+        let id = builder.id();
+        self.attribute_builders.insert(*id, builder);
+        self
+    }
+
+    pub fn set_id(mut self, id: usize) -> PeripheralBuilder {
+        self.id = Some(id);
+        self
+    }
+}
+
+#[derive(Clone, Debug)]
 /// A Value represents the current value of an Attribute.
-///
-/// This enum is used to translate between values received from requests to update an attribute's
-/// state and values understood by the plugin API.
 pub enum Value {
-    #[serde(rename(serialize = "integer", deserialize = "integer"))]
     Int { value: i32 },
-    #[serde(rename(serialize = "double", deserialize = "double"))]
     Double { value: f64 },
-    #[serde(rename(serialize = "string", deserialize = "string"))]
     String { value: CString },
-    #[serde(rename(serialize = "unsigned_integer", deserialize = "unsigned_integer"))]
     Uint { value: u32 },
 }
 
@@ -484,69 +468,14 @@ mod tests {
     }
 
     #[test]
-    fn test_peripheral_set_attribute() {
-        let mut context = set_up();
-        let new_attr = Attribute::Double {
-            id: context.float_id,
-            name: context.name,
-            pre_init: context.pre_init,
-            value: PI,
-        };
-
-        assert_ne!(
-            context
-                .peripheral
-                .attributes
-                .get(&context.float_id)
-                .unwrap(),
-            &new_attr
-        );
-
-        context
-            .peripheral
-            .set_attribute(context.float_id, new_attr.clone());
-        assert_eq!(
-            context
-                .peripheral
-                .attributes
-                .get(&context.float_id)
-                .unwrap(),
-            &new_attr
-        );
-    }
-
-    #[test]
-    fn test_peripheral_set_attributes() {
-        let mut context = set_up();
-        let new_attr = Attribute::Double {
-            id: context.float_id,
-            name: context.name.clone(),
-            pre_init: context.pre_init,
-            value: PI,
-        };
-        let mut new_attrs = BTreeMap::new();
-        new_attrs.insert(context.float_id, new_attr.clone());
-
-        for attr in context.peripheral.attributes.clone().values() {
-            assert_ne!(attr, &new_attr);
-        }
-
-        context.peripheral.set_attributes(new_attrs);
-        for (id, attr) in context.peripheral.attributes {
-            assert_eq!(attr, new_attr);
-            assert_eq!(context.float_id, id);
-        }
-    }
-
-    #[test]
     fn test_peripheral_set_attribute_from_value() {
         let mut context = set_up();
         let new_value = PluginValue::Double(PI);
-        let new_attr = Attribute::Double {
+        let new_attr = Attribute {
             id: context.float_id,
             name: context.name.clone(),
             pre_init: context.pre_init,
-            value: PI,
+            value: Value::Double { value: PI },
         };
 
         assert_ne!(context.peripheral.attributes.get(&0).unwrap(), &new_attr);
@@ -585,31 +514,29 @@ mod tests {
         let mut attributes: BTreeMap<usize, Attribute> = BTreeMap::new();
         attributes.insert(
             int_id,
-            Attribute::Int {
+            Attribute {
                 id: int_id,
                 name: name.clone(),
                 pre_init,
-                value: int_value,
+                value: Value::Int { value: int_value },
             },
         );
         attributes.insert(
             float_id,
-            Attribute::Double {
+            Attribute {
                 id: float_id,
                 name: name.clone(),
                 pre_init,
-                value: float_value,
+                value: Value::Double { value: float_value },
             },
         );
 
-        let mut peripheral = Peripheral {
+        let peripheral = Peripheral {
             library_id,
             name: name.clone(),
             attributes: attributes.clone(),
             id: 0,
-            links: Vec::new(),
         };
-        peripheral.set_attribute_links();
 
         Context {
             attributes,

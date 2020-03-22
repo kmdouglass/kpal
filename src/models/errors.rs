@@ -19,7 +19,15 @@ impl Error for ModelError {
 
 impl fmt::Display for ModelError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ModelError: {{ Cause: {:?} }}", self)
+        write!(f, "ModelError: {{ Cause: {:?} }}", self.side)
+    }
+}
+
+impl From<BuilderPartiallyInitializedError> for ModelError {
+    fn from(error: BuilderPartiallyInitializedError) -> Self {
+        ModelError {
+            side: Some(Box::new(error)),
+        }
     }
 }
 
@@ -44,5 +52,17 @@ impl From<Utf8Error> for ModelError {
         ModelError {
             side: Some(Box::new(error)),
         }
+    }
+}
+
+/// An error raised when trying to build a model from a partially-initialized builder.
+#[derive(Debug)]
+pub struct BuilderPartiallyInitializedError();
+
+impl Error for BuilderPartiallyInitializedError {}
+
+impl fmt::Display for BuilderPartiallyInitializedError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }

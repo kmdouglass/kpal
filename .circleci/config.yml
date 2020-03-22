@@ -34,10 +34,6 @@ commands:
         default: ""
     steps:
       - checkout
-      - restore_cache:
-          keys:
-            - v2-build-cache-{{ checksum "Cargo.lock" }}
-            - v2-build-cache-
       - run:
           name: Check code formatting
           command: |
@@ -54,15 +50,6 @@ commands:
             rustc --version --verbose
             cargo --version --verbose
             cargo build --release --workspace --all-targets << parameters.target >>
-
-  save-build-cache:
-    description: Save the build cache
-    steps:
-      - save_cache:
-          key: v2-build-cache-{{ checksum "Cargo.lock" }}
-          paths:
-            - "~/.cargo"
-            - "./target"
 
 ###################################################################################################
 
@@ -183,7 +170,6 @@ jobs:
             - release/kpald
             - release/libkpal_gpio_cdev.so
             - release/examples/libbasic-plugin.so
-      - save-build-cache
 
   build-armv7:
     docker:
@@ -215,17 +201,12 @@ jobs:
             - armv7-unknown-linux-gnueabihf/release/kpald
             - armv7-unknown-linux-gnueabihf/release/libkpal_gpio_cdev.so
             - armv7-unknown-linux-gnueabihf/release/examples/libbasic-plugin.so
-      - save-build-cache
 
   publish-crates-io-dry-run:
     docker:
       - image: kmdouglass/rust-linux-x86_64
     steps:
       - checkout
-      - restore_cache:
-          keys:
-            - v2-build-cache-{{ checksum "Cargo.lock" }}
-            - v2-build-cache-
       - run:
           name: Login to crates.io
           command: cargo login ${CRATESIO_TOKEN}
@@ -274,10 +255,6 @@ jobs:
       - image: kmdouglass/rust-linux-x86_64
     steps:
       - checkout
-      - restore_cache:
-          keys:
-            - v2-build-cache-{{ checksum "Cargo.lock" }}
-            - v2-build-cache-
       - run:
           name: Login to crates.io
           command: cargo login ${CRATESIO_TOKEN}

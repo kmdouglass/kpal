@@ -15,11 +15,11 @@ fn test_user_api() {
         library_id: 0,
     };
     let patch_attr_0 = PatchData {
-        variant: "double",
+        r#type: "double",
         value: 42.0,
     };
     let patch_attr_3 = PatchData {
-        variant: "string",
+        r#type: "string",
         value: "foobarbaz",
     };
     #[rustfmt::skip]
@@ -104,6 +104,6 @@ struct PostData {
 /// Patch data to update an attribute value.
 #[derive(Debug, Serialize)]
 struct PatchData<T> {
-    variant: &'static str,
+    r#type: &'static str,
     value: T,
 }

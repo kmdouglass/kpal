@@ -1,41 +1,42 @@
 //! Error types for the executor module.
 
-use std::{boxed::Box, error::Error, fmt, fmt::Debug};
+use std::{boxed::Box, error::Error, fmt, fmt::Debug, mem::discriminant};
 
-use crate::models::ModelError;
+use crate::{integrations::ErrorReason, models::ModelError};
 
 /// An error returned when an operation in an executor fails.
 #[derive(Debug)]
 pub struct ExecutorError {
     /// The body of the HTTP response to return to the client.
-    body: String,
+    message: String,
 
-    /// The HTTP status code to return to HTTP clients.
-    http_status_code: u16,
+    /// The reason for the error. This is used by integrations to translate into their own error
+    /// responses.
+    reason: ErrorReason,
 
-    /// The cause of the error, if any.
+    /// The lower-level instance of the Error that that caused this one, if any.
     side: Option<Box<dyn Error + 'static + Send>>,
 }
 
 impl ExecutorError {
     pub fn new(
-        body: String,
-        http_status_code: u16,
+        message: String,
+        reason: ErrorReason,
         side: Option<Box<dyn Error + 'static + Send>>,
     ) -> ExecutorError {
         ExecutorError {
-            body,
-            http_status_code,
+            message,
+            reason,
             side,
         }
     }
 
-    pub fn body(&self) -> &str {
-        &self.body
+    pub fn message(&self) -> &str {
+        &self.message
     }
 
-    pub fn http_status_code(&self) -> u16 {
-        self.http_status_code
+    pub fn reason(&self) -> ErrorReason {
+        self.reason
     }
 }
 
@@ -55,7 +56,7 @@ impl fmt::Display for ExecutorError {
 
 impl PartialEq for ExecutorError {
     fn eq(&self, other: &Self) -> bool {
-        match (self.side.as_ref(), other.side.as_ref()) {
+        let sides_match = match (self.side.as_ref(), other.side.as_ref()) {
             (None, None) => true,
             (Some(self_side), Some(other_side)) => {
                 let self_side = format!("{}", self_side);
@@ -64,7 +65,11 @@ impl PartialEq for ExecutorError {
                 self_side == other_side
             }
             _ => false,
-        }
+        };
+
+        let reasons_match = discriminant(&self.reason) == discriminant(&other.reason);
+
+        sides_match && reasons_match
     }
 }
 
@@ -72,7 +77,7 @@ impl From<AdvancePhaseError> for ExecutorError {
     fn from(error: AdvancePhaseError) -> ExecutorError {
         ExecutorError::new(
             "Could not advance the phase of the of the plugin".to_string(),
-            500,
+            ErrorReason::InternalError,
             Some(Box::new(error)),
         )
     }
@@ -82,7 +87,7 @@ impl From<CountError> for ExecutorError {
     fn from(error: CountError) -> ExecutorError {
         ExecutorError::new(
             "Could not determine the number of plugin attributes".to_string(),
-            500,
+            ErrorReason::InternalError,
             Some(Box::new(error)),
         )
     }
@@ -92,7 +97,7 @@ impl From<IdsError> for ExecutorError {
     fn from(error: IdsError) -> ExecutorError {
         ExecutorError::new(
             "Could not determine the plugin's attribute IDs".to_string(),
-            500,
+            ErrorReason::InternalError,
             Some(Box::new(error)),
         )
     }
@@ -102,7 +107,7 @@ impl From<InitError> for ExecutorError {
     fn from(error: InitError) -> ExecutorError {
         ExecutorError::new(
             "Could not initialize the plugin".to_string(),
-            500,
+            ErrorReason::InternalError,
             Some(Box::new(error)),
         )
     }
@@ -110,11 +115,11 @@ impl From<InitError> for ExecutorError {
 
 impl From<NameError> for ExecutorError {
     fn from(error: NameError) -> ExecutorError {
-        let (body, http_status_code) = match error {
-            NameError::DoesNotExist(ref msg) => (msg.clone(), 404),
-            NameError::Failure(ref msg) => (msg.clone(), 500),
+        let (body, reason) = match error {
+            NameError::DoesNotExist(ref msg) => (msg.clone(), ErrorReason::ResourceNotFound),
+            NameError::Failure(ref msg) => (msg.clone(), ErrorReason::InternalError),
         };
-        ExecutorError::new(body, http_status_code, Some(Box::new(error)))
+        ExecutorError::new(body, reason, Some(Box::new(error)))
     }
 }
 
@@ -122,7 +127,7 @@ impl From<PreInitError> for ExecutorError {
     fn from(error: PreInitError) -> ExecutorError {
         ExecutorError::new(
             "Could not determine pre-init status of the attribute".to_string(),
-            500,
+            ErrorReason::InternalError,
             Some(Box::new(error)),
         )
     }
@@ -130,12 +135,12 @@ impl From<PreInitError> for ExecutorError {
 
 impl From<SetValueError> for ExecutorError {
     fn from(error: SetValueError) -> ExecutorError {
-        let (body, http_status_code) = match error {
-            SetValueError::DoesNotExist(ref msg) => (msg.clone(), 404),
-            SetValueError::Failure(ref msg) => (msg.clone(), 500),
-            SetValueError::NotSettable(ref msg) => (msg.clone(), 422),
+        let (body, reason) = match error {
+            SetValueError::DoesNotExist(ref msg) => (msg.clone(), ErrorReason::ResourceNotFound),
+            SetValueError::Failure(ref msg) => (msg.clone(), ErrorReason::InternalError),
+            SetValueError::NotSettable(ref msg) => (msg.clone(), ErrorReason::UnprocessableRequest),
         };
-        ExecutorError::new(body, http_status_code, Some(Box::new(error)))
+        ExecutorError::new(body, reason, Some(Box::new(error)))
     }
 }
 
@@ -143,7 +148,7 @@ impl From<ModelError> for ExecutorError {
     fn from(error: ModelError) -> ExecutorError {
         ExecutorError::new(
             "Could not synchronize the plugin to the peripheral data".to_string(),
-            500,
+            ErrorReason::InternalError,
             Some(Box::new(error)),
         )
     }
@@ -151,11 +156,11 @@ impl From<ModelError> for ExecutorError {
 
 impl From<ValueError> for ExecutorError {
     fn from(error: ValueError) -> ExecutorError {
-        let (body, http_status_code) = match error {
-            ValueError::DoesNotExist(ref msg) => (msg.clone(), 404),
-            ValueError::Failure(ref msg) => (msg.clone(), 500),
+        let (body, reason) = match error {
+            ValueError::DoesNotExist(ref msg) => (msg.clone(), ErrorReason::ResourceNotFound),
+            ValueError::Failure(ref msg) => (msg.clone(), ErrorReason::InternalError),
         };
-        ExecutorError::new(body, http_status_code, Some(Box::new(error)))
+        ExecutorError::new(body, reason, Some(Box::new(error)))
     }
 }
 
@@ -163,7 +168,7 @@ impl From<std::str::Utf8Error> for ExecutorError {
     fn from(error: std::str::Utf8Error) -> Self {
         ExecutorError::new(
             "Could not convert the plugin's error message to a UTF8 string".to_string(),
-            500,
+            ErrorReason::InternalError,
             Some(Box::new(error)),
         )
     }
