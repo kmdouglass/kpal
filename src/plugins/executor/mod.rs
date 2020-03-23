@@ -74,8 +74,9 @@ impl Executor {
     ///
     /// # Arguments
     ///
-    /// * `peripheral` - The instance of a peripheral model that is used to return responses to the
-    /// request handlers
+    /// * `peripheral` - The instance of a peripheral model that is modified in response to actions
+    /// performed on its plugin. Representations of this peripheral are returned to the user upon
+    /// request, which allows her/him to query the state of the plugin.
     pub fn run(mut self, mut peripheral: Peripheral) {
         thread::spawn(move || -> Result<(), ExecutorError> {
             log::info!("Spawning new thread for plugin: {:?}", self.plugin);
@@ -276,7 +277,6 @@ impl Executor {
     ///
     /// * `id` - The attribute's unique ID
     /// * `value` - A reference to a value instance that will be copied into the plugin
-    /// * `phase` - The lifecycle phase of the plugin that determines which callbacks to use
     pub fn set_attribute_value(&self, id: size_t, value: &Val) -> Result<(), ExecutorError> {
         let result = unsafe {
             (self.plugin.vtable.set_attribute_value)(
@@ -433,11 +433,11 @@ impl Executor {
         }
     }
 
-    /// Synchronizes the plugin with the peripheral model by setting all settable attributes.
+    /// Synchronizes the plugin with the peripheral by setting all settable plugin attributes.
     ///
     /// # Arguments
     ///
-    /// * `peripheral` - A reference to peripheral data to which the plugin will be synchronized
+    /// * `builder` - A reference to peripheral data
     pub fn sync(&mut self, builder: &PeripheralBuilder) -> Result<(), ExecutorError> {
         for attr in builder.attributes().values() {
             let value = attr.to_value()?;

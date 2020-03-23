@@ -1,4 +1,11 @@
 //! Models represent the core abstractions of KPAL.
+//!
+//! Model instances correspond directly to objects in the User API, e.g.
+//!
+//! - peripherals
+//! - attributes
+//! - values
+//! - libraries
 mod errors;
 
 use std::{
@@ -16,17 +23,30 @@ pub use errors::ModelError;
 
 /// A model represents one of the system's core abstractions.
 pub trait Model {
+    /// Returns the ID of the Model instance.
     fn id(&self) -> usize;
 
+    /// Returns the key of the Model instance. Keys are used to give names to Models when building
+    /// URLs or URIs.
     fn key() -> &'static str;
 }
 
 /// Attributes represent part of the entire state of a peripheral.
+///
+/// Each attribute is owned by one and only one peripheral. Its ID is unique within that peripheral
+/// only.
 #[derive(Clone, Debug)]
 pub struct Attribute {
+    /// The ID of the Attribute
     id: usize,
+
+    /// The name of the Attribute
     name: String,
+
+    /// Whether the attribute's default value may be overridden when the plugin is initialized
     pre_init: bool,
+
+    /// The value of the Attribute
     value: Value,
 }
 
@@ -88,7 +108,7 @@ impl Attribute {
         &self.name
     }
 
-    /// Indicates whether an attribute's value may be modified before peripheral initialization.
+    /// Indicates whether an Attribute's value may be modified before peripheral initialization.
     pub fn pre_init(&self) -> bool {
         self.pre_init
     }
@@ -108,7 +128,7 @@ impl Attribute {
         Ok(value)
     }
 
-    /// Returns a reference to the Attribute't value.
+    /// Returns a reference to the Attribute's value.
     pub fn value(&self) -> &Value {
         &self.value
     }
@@ -132,15 +152,33 @@ impl PartialEq for Attribute {
     }
 }
 
+/// AttributeBuilders are used to initialize parts of new Attributes at different points in time.
+///
+/// AttributeBuilders allow the daemon to build new Attribute instances explicitly and sequentially
+/// by setting values for an attribute's fields prior to initialization. When the Attribute is
+/// ready to be intialized, the `build` method is called.
 #[derive(Debug)]
 pub struct AttributeBuilder {
+    /// The ID of the Attribute
     id: usize,
+
+    /// The name of the Attribute
     name: Option<String>,
+
+    /// Whether the Attribute's default value may be overridden when the plugin is initialized
     pre_init: Option<bool>,
+
+    /// The value of the Attribute
     value: Value,
 }
 
 impl AttributeBuilder {
+    /// Creates a new instance of an AttributeBuilder
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ID of the AttributeBuilder
+    /// * `value` - The current value of the AttributeBuilder
     pub fn new(id: usize, value: Value) -> AttributeBuilder {
         AttributeBuilder {
             id,
@@ -150,6 +188,9 @@ impl AttributeBuilder {
         }
     }
 
+    /// Initializes a new Attribute instance from the builder.
+    ///
+    /// This method will consume the builder.
     pub fn build(self) -> Result<Attribute, ModelError> {
         Ok(Attribute {
             id: self.id,
@@ -159,26 +200,51 @@ impl AttributeBuilder {
         })
     }
 
+    /// Returns the ID of the Attribute builder.
     pub fn id(&self) -> &usize {
         &self.id
     }
 
+    /// Sets the name of the AttributeBuilder.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The new name of the AttributeBuilder
     pub fn set_name(mut self, name: String) -> AttributeBuilder {
         self.name = Some(name);
         self
     }
 
+    /// Sets the pre-init value of the AttributeBuilder
+    ///
+    /// # Arguments
+    ///
+    /// * `pre_init` - Whether the Attribute value can be set before the plugin is initialized
     pub fn set_pre_init(mut self, pre_init: bool) -> AttributeBuilder {
         self.pre_init = Some(pre_init);
         self
     }
 }
 
+/// A Library represents an interface to a plugin.
+///
+/// KPAL interfaces with plugins through library files. Libraries provide implementations of the
+/// plugin API that is specific to each plugin.
+///
+/// A library file is the shared library that resides on the files system and that is pointed to by
+/// this Model.
 #[derive(Debug)]
 pub struct Library {
+    /// The plugin attributes that are defined by this Library.
     attributes: BTreeMap<usize, Attribute>,
+
+    /// The ID of the Library.
     id: usize,
+
+    /// A reference to the underlying shared library.
     library: Option<Dll>,
+
+    /// The name of the library.
     name: String,
 }
 
@@ -195,6 +261,16 @@ impl Clone for Library {
 }
 
 impl Library {
+    /// Creates a new Library instance.
+    ///
+    /// Libraries contain an instance of a shared library object. This object provides an interface
+    /// between Rust and the library file.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The numeric ID of the attribute
+    /// * `name` - The attribute's name
+    /// * `library` The shared library that is used to manipulate the plugin
     pub fn new(id: usize, name: String, library: Option<Dll>) -> Library {
         let attributes: BTreeMap<usize, Attribute> = BTreeMap::new();
         Library {
@@ -205,18 +281,22 @@ impl Library {
         }
     }
 
+    /// Returns the shared library instance.
     pub fn dll(&self) -> &Option<Dll> {
         &self.library
     }
 
+    /// Returns the collection of attributes provided by the plugin library.
     pub fn attributes(&self) -> &BTreeMap<usize, Attribute> {
         &self.attributes
     }
 
+    /// Returns the name of the Library.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Allows a Library's attributes to be set.
     pub fn set_attributes(&mut self, attributes: BTreeMap<usize, Attribute>) {
         self.attributes = attributes;
     }
@@ -232,6 +312,10 @@ impl Model for Library {
     }
 }
 
+/// A Peripheral represents a single device or system controlled by KPAL.
+///
+/// A Peripheral is an interface to a Plugin. A plugin reprensts the actual device or system,
+/// whereas a Peripheral is what the users sees and how she/he controls it.
 #[derive(Clone, Debug)]
 pub struct Peripheral {
     attributes: BTreeMap<usize, Attribute>,
@@ -241,18 +325,27 @@ pub struct Peripheral {
 }
 
 impl Peripheral {
+    /// Returns the collection of peripheral attributes.
     pub fn attributes(&self) -> &BTreeMap<usize, Attribute> {
         &self.attributes
     }
 
+    /// Returns the ID of the Peripheral.
     pub fn library_id(&self) -> usize {
         self.library_id
     }
 
+    /// Returns the name of the Peripheral.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Sets the value of an Attribute to the value contained in a Value instance from a plugin.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ID of the attribute to set
+    /// * `value` - The Value instance from a plugin
     pub fn set_attribute_from_value(
         &mut self,
         id: usize,
@@ -263,6 +356,11 @@ impl Peripheral {
         Ok(())
     }
 
+    /// Sets the ID of the Peripheral.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The new Peripheral ID.
     pub fn set_id(&mut self, id: usize) {
         self.id = id;
     }
@@ -278,11 +376,26 @@ impl Model for Peripheral {
     }
 }
 
+/// PeripheralBuilders are used to initialize parts of new Peripherals at different points in time.
+///
+/// PeripheralBuilders allow the daemon to build new Peripheral instances explicitly and
+/// sequentially by setting values for an peripheral's fields prior to initialization. When the
+/// Peripheral is ready to be intialized, the `build` method is called.
 pub struct PeripheralBuilder {
+    /// The collection of Attributes that will belong to the eventual Peripheral instance.
     attributes: BTreeMap<usize, Attribute>,
+
+    /// A collection of partially-initialized Attributes. This collection must be empty before the
+    /// new Peripheral is created.
     attribute_builders: BTreeMap<usize, AttributeBuilder>,
+
+    /// The ID of the PeripheralBuilder.
     id: Option<usize>,
+
+    /// The ID of the plugin library that is used to control this Peripheral.
     library_id: usize,
+
+    /// The name of the PeripheralBuilder.
     name: String,
 }
 
@@ -297,6 +410,9 @@ impl PeripheralBuilder {
         }
     }
 
+    /// Initializes a new peripheral instance from the builder.
+    ///
+    /// This method will consume the builder.
     pub fn build(self) -> Result<Peripheral, ModelError> {
         if !self.attribute_builders.is_empty() {
             return Err(BuilderPartiallyInitializedError().into());
@@ -310,10 +426,12 @@ impl PeripheralBuilder {
         })
     }
 
+    /// Returns a single attribute from the builder.
     pub fn attribute(&self, id: usize) -> Option<&Attribute> {
         self.attributes.get(&id)
     }
 
+    /// Returns all attributes of the builder.
     pub fn attributes(&self) -> &BTreeMap<usize, Attribute> {
         &self.attributes
     }
@@ -323,26 +441,46 @@ impl PeripheralBuilder {
     /// Note that this will remove the AttributeBuilder from the collection that is owned by
     /// instances of the PeripheralBuilder struct. Calling this method on all AttributeBuilders
     /// will empty the collection.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ID of the AttributeBuilder to retrieve
     pub fn attribute_builder(&mut self, id: usize) -> Option<AttributeBuilder> {
         self.attribute_builders.remove(&id)
     }
 
+    /// Returns the library ID of the AttributeBuilder
     pub fn library_id(&self) -> &usize {
         &self.library_id
     }
 
+    /// Inserts an Attribute into the collection of Attributes owned by this builder.
+    ///
+    /// # Arguments
+    ///
+    /// * `attr` - The Attribute to insert into this builder's collection
     pub fn set_attribute(mut self, attr: Attribute) -> PeripheralBuilder {
         let id = attr.id();
         self.attributes.insert(id, attr);
         self
     }
 
+    /// Inserts an AttributeBuilder into the collection of AttributeBuilders.
+    ///
+    /// # Arguments
+    ///
+    /// * `attr` - The AttributeBuilder to insert into this builder's collection
     pub fn set_attribute_builder(mut self, builder: AttributeBuilder) -> PeripheralBuilder {
         let id = builder.id();
         self.attribute_builders.insert(*id, builder);
         self
     }
 
+    /// Sets the ID of the PeripheralBuilder.
+    ///
+    /// # Arguments
+    ///
+    /// *`id` - The new ID of the PeripheralBuilder
     pub fn set_id(mut self, id: usize) -> PeripheralBuilder {
         self.id = Some(id);
         self
@@ -359,6 +497,7 @@ pub enum Value {
 }
 
 impl Value {
+    /// Returns a Val (a reference-like Value object) from a Value.
     pub fn as_val(&self) -> PluginValue {
         match self {
             Value::Int { value } => PluginValue::Int(*value),

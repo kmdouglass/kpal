@@ -20,10 +20,11 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    constants::BASE_URL_PATH,
-    models::{Attribute, AttributeBuilder, Library, Model, Peripheral, PeripheralBuilder, Value},
+use crate::models::{
+    Attribute, AttributeBuilder, Library, Model, Peripheral, PeripheralBuilder, Value,
 };
+
+use super::BASE_URL_PATH;
 
 pub use errors::SchemaError;
 
