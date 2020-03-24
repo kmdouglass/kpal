@@ -23,7 +23,7 @@ two application programming interfaces (APIs):
 - **the user API** A web service that can be accessed from different computers on a network,
   including smart phones
 - **the plugin API** A high-level plugin interface that allows KPAL to communicate with
-  peripherals such as senors, motors, and cameras
+  peripherals such as sensors, motors, and cameras
 
 ## Quickstart
 
@@ -97,7 +97,31 @@ curl -s \
 
 ## Core components
 
-![High level architecture of KPAL](./resources/img/high_level_architecture.svg)
+ 
+                +--------------------------------+
+                |                                |
+                |          Object Model          |
+                |                                |      ^
+                +--------------------------------+      |
+             ----------------------------------------   |  User API
+                +--------------------------------+      |
+                |                                |      v
+                |        REST Integration        |
+                |                                |
+                +--------------------------------+
+             ----------------------------------------
+                +--------------------------------+
+                |                                |
+                |           KPAL Daemon          |
+                |                                |      ^
+                +--------------------------------+      |
+             ----------------------------------------   |  Plugin API
+                +--------+  +--------+  +--------+      |
+                |        |  |        |  |        |      v
+                | Plugin |  | Plugin |  | Plugin |
+                |        |  |        |  |        |
+                +--------+  +--------+  +--------+
+
 
 ### Object model
 
@@ -105,12 +129,27 @@ The object model is the set of resources with which users interact. Currently, t
 include:
 
 - **peripherals** Models of individual hardware peripherals
-  - **attributes** Values that represent the state of a peripheral
-- **libraries** The shared libraries that enable the plugin API
+- **attributes** Attributes describe a peripheral. Users interact with peripherals by modifying or
+  reading their attributes.
+- **libraries** Shared libraries provide a unique implementation of the plugin interface for each
+  component.
+
+### Integrations
+
+Integrations are different implementations of the user API. Examples of possible integrations
+include
+
+ - a JSON REST API
+ - gRPC
+ - a C static library
+ - Python bindings
+
+Currently only a JSON REST integration is available, but the structure of KPAL makes it relatively
+easy to add others.
 
 ### Daemon
 
-The KPAL daemon, or `kpald`, is a web server that runs on the computer to which the peripherals are
+The KPAL daemon, or `kpald`, is a server that runs on the computer to which the peripherals are
 connected. Users directly interact with the daemon through the user API. Each peripheral runs
 inside its own thread which is spawned by a POST request to the user API. The daemon forwards other
 user requests to each thread through the thread's dedicated channel. The threads interpret the
