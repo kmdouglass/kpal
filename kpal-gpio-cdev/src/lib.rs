@@ -67,15 +67,12 @@ impl PluginAPI<GPIOPluginError> for GPIOPlugin {
             .attributes
             .borrow()
             .get_alt(&"device file")
-            .ok_or(GPIOPluginError {
-                error_code: ATTRIBUTE_DOES_NOT_EXIST,
-                side: None,
-            })?
+            .ok_or_else(|| GPIOPluginError::new(ATTRIBUTE_DOES_NOT_EXIST))?
             .value
         {
             device_file.clone().into_string()?
         } else {
-            unreachable!()
+            return Err(GPIOPluginError::new(ATTRIBUTE_TYPE_MISMATCH));
         };
         let mut chip = Chip::new(device_file)?;
 
@@ -83,15 +80,12 @@ impl PluginAPI<GPIOPluginError> for GPIOPlugin {
             .attributes
             .borrow()
             .get_alt(&"offset")
-            .ok_or(GPIOPluginError {
-                error_code: ATTRIBUTE_DOES_NOT_EXIST,
-                side: None,
-            })?
+            .ok_or_else(|| GPIOPluginError::new(ATTRIBUTE_DOES_NOT_EXIST))?
             .value
         {
             offset
         } else {
-            unreachable!()
+            return Err(GPIOPluginError::new(ATTRIBUTE_TYPE_MISMATCH));
         };
 
         let handle = chip
@@ -119,7 +113,7 @@ fn on_get_pin_state(plugin: &GPIOPlugin, _cached: &Value) -> Result<Value, GPIOP
     let pin_value = plugin
         .line_handle
         .as_ref()
-        .ok_or_else(|| PluginUninitializedError {})?
+        .ok_or_else(|| Error::PluginUninitialized)?
         .get_value()?;
     let value = Value::Int(pin_value.try_into()?);
 
@@ -141,13 +135,13 @@ fn on_set_pin_state(
     let pin_value = if let Val::Int(pin_value) = val {
         pin_value.to_owned().try_into()?
     } else {
-        unreachable!()
+        return Err(GPIOPluginError::new(ATTRIBUTE_TYPE_MISMATCH));
     };
 
     plugin
         .line_handle
         .as_ref()
-        .ok_or_else(|| PluginUninitializedError {})?
+        .ok_or_else(|| Error::PluginUninitialized)?
         .set_value(pin_value)?;
 
     Ok(())

@@ -1,30 +1,37 @@
 //! Error implementations for the gpio-cdev plugin.
 
 use std::boxed::Box;
-use std::error::Error;
 use std::fmt;
 
 use gpio_cdev::errors::ErrorKind;
 use libc::c_int;
 
 use kpal_plugin::error_codes::*;
-use kpal_plugin::{PluginError, PluginUninitializedError};
+use kpal_plugin::{Error as KpalError, PluginError};
 
-/// An error raised when trying to create a new GPIO plugin instance.
+/// Information passed to the caller when the GPIO plugin raises an error.
 #[derive(Debug)]
 pub struct GPIOPluginError {
     pub error_code: c_int,
-    pub side: Option<Box<dyn Error + 'static>>,
+    pub side: Option<Box<dyn std::error::Error + 'static>>,
 }
 
-impl Error for GPIOPluginError {}
+impl std::error::Error for GPIOPluginError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.side.as_ref().map(|e| e.as_ref() as &_)
+    }
+}
 
 impl fmt::Display for GPIOPluginError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let cause = match &self.side {
+            Some(e) => format!("\nCaused by: {}", e),
+            None => String::from(""),
+        };
         write!(
             f,
-            "GPIOPluginError {{ error_code: {}, side: {:?} }}",
-            self.error_code, self.side
+            "GPIOPluginError: error code: {}{}",
+            self.error_code, cause
         )
     }
 }
@@ -77,7 +84,7 @@ impl From<std::convert::Infallible> for GPIOPluginError {
 impl From<std::ffi::IntoStringError> for GPIOPluginError {
     fn from(error: std::ffi::IntoStringError) -> GPIOPluginError {
         GPIOPluginError {
-            error_code: STRING_CONVERSION_ERR,
+            error_code: CONVERSION_ERR,
             side: Some(Box::new(error)),
         }
     }
@@ -86,16 +93,21 @@ impl From<std::ffi::IntoStringError> for GPIOPluginError {
 impl From<std::num::TryFromIntError> for GPIOPluginError {
     fn from(error: std::num::TryFromIntError) -> GPIOPluginError {
         GPIOPluginError {
-            error_code: NUMERIC_CONVERSION_ERR,
+            error_code: CONVERSION_ERR,
             side: Some(Box::new(error)),
         }
     }
 }
 
-impl From<PluginUninitializedError> for GPIOPluginError {
-    fn from(error: PluginUninitializedError) -> GPIOPluginError {
+impl From<KpalError> for GPIOPluginError {
+    fn from(error: KpalError) -> GPIOPluginError {
+        let error_code = match error {
+            KpalError::PluginUninitialized => PLUGIN_UNINIT_ERR,
+            KpalError::ValueConversionError(_) => CONVERSION_ERR,
+        };
+
         GPIOPluginError {
-            error_code: PLUGIN_INIT_ERR,
+            error_code,
             side: Some(Box::new(error)),
         }
     }

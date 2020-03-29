@@ -1,5 +1,18 @@
 //! The KPAL plugin crate provides tools to write your own KPAL plugins.
 //!
+//! Plugins are created using a three step process.
+//!
+//! 1. Define two structs, one that will hold your plugin's data, including its attributes, and
+//! another that will hold your plugin's error information.
+//! 2. Implement the PluginAPI and PluginError traits for the data and error structs, respectively.
+//! 3. Implement any callbacks that will be used to read and update your plugin's attribute values.
+//!
+//! Plugins have a lifecycle defined by distinct phases. The attribute callbacks are different for
+//! each phase. Currently there are two phases:
+//!
+//! 1. `Init` - The phase during which a plugin is being initialized
+//! 2. `Run` - A plugin's normal operating phase
+//!
 //! See the examples folder for ideas on how to implement the datatypes and methods defined in this
 //! library.
 mod constants;
@@ -10,8 +23,7 @@ mod strings;
 use std::{
     cell::{Ref, RefCell},
     cmp::PartialEq,
-    error::Error,
-    ffi::{CStr, CString, FromBytesWithNulError},
+    ffi::{CStr, CString},
     fmt, slice,
 };
 
@@ -19,15 +31,17 @@ use libc::{c_char, c_double, c_int, c_uchar, c_uint, size_t};
 pub use multi_map::{multimap, MultiMap};
 
 pub use {
-    constants::*,
-    errors::error_codes,
-    errors::{PluginUninitializedError, ERRORS},
+    constants::{
+        error_codes, ATTRIBUTE_PRE_INIT_FALSE, ATTRIBUTE_PRE_INIT_TRUE, ERRORS, INIT_PHASE,
+        RUN_PHASE,
+    },
+    errors::Error,
     ffi::*,
     strings::copy_string,
 };
 
 /// The set of functions that must be implemented by a plugin.
-pub trait PluginAPI<E: Error + PluginError + 'static>
+pub trait PluginAPI<E: std::error::Error + PluginError + 'static>
 where
     Self: Sized,
 {
@@ -209,7 +223,7 @@ where
 /// * `value` - A reference to an attribute's current value
 /// * `val` - A reference to the attribute's desired, new value
 /// * `set` - The callback function that will perform the value update
-fn set_helper<T, E: Error + PluginError + 'static>(
+fn set_helper<T, E: std::error::Error + PluginError + 'static>(
     plugin: &T,
     value: &Value,
     val: &Val,
@@ -376,7 +390,7 @@ pub type Attributes<T, E> = RefCell<MultiMap<usize, &'static str, Attribute<T, E
 /// A single piece of information that partly determines the state of a plugin.
 #[derive(Debug)]
 #[repr(C)]
-pub struct Attribute<T, E: Error + PluginError> {
+pub struct Attribute<T, E: std::error::Error + PluginError> {
     /// The name of the attribute.
     pub name: CString,
 
@@ -449,7 +463,7 @@ impl Val {
     /// This method is used to convert Vals, which pass through the FFI, into owned Value
     /// datatypes. Wrapped data that is not Copy is necessarily cloned when the new Value instance
     /// is created.
-    pub fn to_value(&self) -> Result<Value, ValueConversionError> {
+    pub fn to_value(&self) -> Result<Value, Error> {
         match self {
             Val::Int(value) => Ok(Value::Int(*value)),
             Val::Double(value) => Ok(Value::Double(*value)),
@@ -476,7 +490,7 @@ impl Val {
 /// The Update variant is used to set only the cached value of attributes. Attributes that are
 /// Update always return their cached value when the attribute's value is read.
 #[repr(C)]
-pub enum Callbacks<T, E: Error + PluginError> {
+pub enum Callbacks<T, E: std::error::Error + PluginError> {
     Constant,
     Get(fn(plugin: &T, cached: &Value) -> Result<Value, E>),
     GetAndSet(
@@ -486,7 +500,7 @@ pub enum Callbacks<T, E: Error + PluginError> {
     Update,
 }
 
-impl<T, E: Error + PluginError> fmt::Debug for Callbacks<T, E> {
+impl<T, E: std::error::Error + PluginError> fmt::Debug for Callbacks<T, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use Callbacks::*;
         match *self {
@@ -563,28 +577,4 @@ macro_rules! declare_plugin {
             PLUGIN_OK
         }
     };
-}
-
-/// An error type that represents a failure to convert a Val to a Value.
-#[derive(Debug)]
-pub struct ValueConversionError {
-    side: FromBytesWithNulError,
-}
-
-impl Error for ValueConversionError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&self.side)
-    }
-}
-
-impl fmt::Display for ValueConversionError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PluginError: {:?}", self)
-    }
-}
-
-impl From<FromBytesWithNulError> for ValueConversionError {
-    fn from(error: FromBytesWithNulError) -> Self {
-        ValueConversionError { side: error }
-    }
 }
