@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2020-03-24
+## [Unreleased] - 2020-03-29
 ### Added
 - A new error code was added to the `kpal-plugin` crate called `STRING_CONVERSION_ERR`.
 - A new module called `integrations` was added. Its purpose is to make it easier to create
@@ -18,6 +18,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The internal handling of matches on pairs of enums was redone. This has no effect on users, but
   for developers the compiler should now be able to remind you when you forget to update methods
   involving matches on pairs after introducing a new enum variant for `Attribute`, `Value`, etc.
+- Error handling in `kpal-plugin` and `kpal-gpio-cdev` was refactored to condense the number of
+  error types exported by `kpal-plugin` to one.
   
 ### Fixed
 - `kpal-gpio-cdev` now returns the correct `PLUGIN_INIT_ERR` error code when the plugin fails to
