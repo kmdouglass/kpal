@@ -77,8 +77,8 @@ impl fmt::Display for IntegrationsError {
 impl From<PluginError> for IntegrationsError {
     fn from(error: PluginError) -> IntegrationsError {
         IntegrationsError::new(
-            error.message().to_owned(),
-            error.reason(),
+            "Replace me".to_owned(),
+            ErrorReason::InternalError,
             Some(Box::new(error)),
         )
     }

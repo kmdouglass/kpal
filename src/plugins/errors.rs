@@ -9,165 +9,121 @@ use std::{
 
 use crate::{
     init::Transmitters,
-    integrations::ErrorReason,
     models::{Library, ModelError},
 };
 
-use super::executor::ExecutorError;
-
 /// Contains information for clients about errors that occur while communicating with a plugin.
-///
-/// This error type is intended for the exclusive use by server request handlers. After an
-/// operation is performed on a plugin, the result may be an error of one of many different
-/// types. These errors should be converted into a PluginError. A PluginError contains the
-/// information that is necessary for the server's request handler to report information back to
-/// the client about why the requested operation failed.
 #[derive(Debug)]
-pub struct PluginError {
-    /// The message of the HTTP response to return to the client.
-    message: String,
-
-    /// The reason for the error. This is used by integrations to translate into their own error
-    /// responses.
-    reason: ErrorReason,
-
-    /// The lower-level instance of the Error that that caused this one, if any.
-    side: Option<Box<dyn Error + 'static + Send>>,
+pub enum PluginError {
+    AdvancePhaseError(i32),
+    AttributeCountError,
+    AttributeIDsError,
+    AttributeDoesNotExist(String),
+    AttributeFailure(String),
+    AttributeNotSettable(String),
+    ChannelReceiveError(std::sync::mpsc::RecvError),
+    GetLibraryError(String),
+    GetTransmittersError(String),
+    MessageNullPointerError,
+    ModelFailure(ModelError),
+    NewPluginError,
+    PluginInitError(String),
+    SetAttributesFailure(String),
+    SetAttributesUserInputError(String),
+    SymbolError(std::io::Error),
+    Utf8Error(std::str::Utf8Error),
 }
 
-impl PluginError {
-    pub fn new(
-        message: String,
-        reason: ErrorReason,
-        side: Option<Box<dyn Error + 'static + Send>>,
-    ) -> PluginError {
-        PluginError {
-            message,
-            reason,
-            side,
-        }
-    }
-
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-
-    pub fn reason(&self) -> ErrorReason {
-        self.reason
-    }
-}
-
-impl Error for PluginError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        // The `as &_` is necessary for successful type inference due to the Send trait.
-        // https://users.rust-lang.org/t/question-about-error-source-s-static-return-type/34515/7
-        self.side.as_ref().map(|e| e.as_ref() as &_)
-    }
-}
+impl Error for PluginError {}
 
 impl fmt::Display for PluginError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "PluginError: {:?}", self)
+        use PluginError::*;
+        match self {
+            AdvancePhaseError(phase) => write!(
+                f,
+                "could not advance the lifetime phase of the plugin from phase {}",
+                phase
+            ),
+            AttributeCountError => write!(f, "could not determine the number of plugin attributes"),
+            AttributeIDsError => write!(f, "could not determine the attribute IDs"),
+            AttributeDoesNotExist(e) => write!(f, "attribute does not exist\nCaused by: {}", e),
+            AttributeFailure(e) => {
+                write!(f, "could not get or set attribute value\nCaused by: {}", e)
+            }
+            AttributeNotSettable(e) => write!(f, "attribute is not settable\nCaused by: {}", e),
+            ChannelReceiveError(e) => {
+                write!(f, "could not read message from the plugin's channel: {}", e)
+            }
+            GetLibraryError(e) => write!(f, "could not get library for plugin\nCaused by: {}", e),
+            GetTransmittersError(e) => {
+                write!(f, "could not get transmitter for plugin\nCaused by: {}", e)
+            }
+            MessageNullPointerError => write!(
+                f,
+                "the plugin returned a null pointer instead of an error message"
+            ),
+            ModelFailure(e) => write!(
+                f,
+                "encountered error in the KPAL object model\nCaused by: {}",
+                e
+            ),
+            NewPluginError => write!(f, "could not create new plugin instance"),
+            PluginInitError(e) => write!(f, "could not initialize plugin\nCaused by: {}", e),
+            SetAttributesFailure(e) => write!(
+                f,
+                "could not merge user-specified attributes into defaults\nCaused by: {}",
+                e
+            ),
+            SetAttributesUserInputError(e) => write!(
+                f,
+                "user-defined pre-init value(s) is invalid\nCaused by: {}",
+                e
+            ),
+            SymbolError(e) => write!(
+                f,
+                "could not get symbol from shared library\nCaused by: {}",
+                e
+            ),
+            Utf8Error(e) => write!(f, "could not parse attribute name\nCaused by: {}", e),
+        }
     }
 }
 
 impl From<ModelError> for PluginError {
     fn from(error: ModelError) -> Self {
-        PluginError {
-            message: "Could not create attribute from value".to_string(),
-            reason: ErrorReason::InternalError,
-            side: Some(Box::new(error)),
-        }
+        PluginError::ModelFailure(error)
     }
 }
 
 impl From<std::io::Error> for PluginError {
     fn from(error: std::io::Error) -> Self {
-        PluginError {
-            message: "Could not get symbol from shared library".to_string(),
-            reason: ErrorReason::InternalError,
-            side: Some(Box::new(error)),
-        }
-    }
-}
-
-impl From<ExecutorError> for PluginError {
-    fn from(error: ExecutorError) -> Self {
-        PluginError {
-            message: format!("{}", error),
-            reason: error.reason(),
-            side: Some(Box::new(error)),
-        }
-    }
-}
-
-impl From<MergeAttributesError> for PluginError {
-    fn from(error: MergeAttributesError) -> Self {
-        let err2 = error.clone();
-        match err2 {
-            MergeAttributesError::Failure(msg) => PluginError {
-                message: msg,
-                reason: ErrorReason::InternalError,
-                side: Some(Box::new(error)),
-            },
-            MergeAttributesError::IsNotPreInit(msg) => PluginError {
-                message: msg,
-                reason: ErrorReason::UnprocessableRequest,
-                side: Some(Box::new(error)),
-            },
-            MergeAttributesError::VariantMismatch(msg) => PluginError {
-                message: msg,
-                reason: ErrorReason::UnprocessableRequest,
-                side: Some(Box::new(error)),
-            },
-        }
+        PluginError::SymbolError(error)
     }
 }
 
 impl<'a> From<PoisonError<MutexGuard<'a, Library>>> for PluginError {
-    fn from(_error: PoisonError<MutexGuard<Library>>) -> Self {
-        PluginError {
-            message: "The Mutex on the library is poisoned".to_string(),
-            reason: ErrorReason::InternalError,
-            side: None,
-        }
+    fn from(_: PoisonError<MutexGuard<Library>>) -> Self {
+        PluginError::GetLibraryError("The mutex on the library is poisoned".to_owned())
     }
 }
 
 impl<'a> From<PoisonError<RwLockWriteGuard<'a, Transmitters>>> for PluginError {
-    fn from(_error: PoisonError<RwLockWriteGuard<Transmitters>>) -> Self {
-        PluginError {
-            message: "The RwLock on the transmitters collection is poisoned".to_string(),
-            reason: ErrorReason::InternalError,
-            side: None,
-        }
+    fn from(_: PoisonError<RwLockWriteGuard<Transmitters>>) -> Self {
+        PluginError::GetTransmittersError(
+            "The RwLock on the transmitters collection is poisoned".to_owned(),
+        )
     }
 }
 
-/// Raised when the user-provided attribute values cannot be merged into the defaults.
-#[derive(Debug, Clone)]
-pub enum MergeAttributesError {
-    Failure(String),
-    IsNotPreInit(String),
-    VariantMismatch(String),
-}
-
-impl Error for MergeAttributesError {}
-
-impl fmt::Display for MergeAttributesError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "MergeAttributesError: {:?}", self)
+impl From<std::sync::mpsc::RecvError> for PluginError {
+    fn from(error: std::sync::mpsc::RecvError) -> Self {
+        PluginError::ChannelReceiveError(error)
     }
 }
 
-impl From<ModelError> for MergeAttributesError {
-    fn from(_error: ModelError) -> MergeAttributesError {
-        MergeAttributesError::Failure("Could not build attribute from builder".to_string())
-    }
-}
-
-impl<'a> From<PoisonError<MutexGuard<'a, Library>>> for MergeAttributesError {
-    fn from(_error: PoisonError<MutexGuard<Library>>) -> MergeAttributesError {
-        MergeAttributesError::Failure("The thread's mutex is poisoned".to_string())
+impl From<std::str::Utf8Error> for PluginError {
+    fn from(error: std::str::Utf8Error) -> Self {
+        PluginError::Utf8Error(error)
     }
 }

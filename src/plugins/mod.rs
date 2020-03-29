@@ -22,11 +22,9 @@ use kpal_plugin::{KpalPluginInit, Plugin};
 
 use crate::{
     init::{TSLibrary, Transmitters},
-    integrations::ErrorReason,
     models::{Library, Model, PeripheralBuilder},
 };
 
-use errors::MergeAttributesError;
 pub use errors::PluginError;
 pub use executor::Executor;
 pub use messaging::*;
@@ -88,10 +86,8 @@ pub fn init(
 /// * `lib` - A copy of the Library that contains the implementation of the peripheral's Plugin API
 pub unsafe fn kpal_plugin_new(lib: &Library) -> Result<Plugin, PluginError> {
     let dll = lib.dll().as_ref().ok_or_else(|| {
-        PluginError::new(
+        PluginError::GetLibraryError(
             "Could not obtain reference to the plugin's shared library".to_string(),
-            ErrorReason::InternalError,
-            None,
         )
     })?;
 
@@ -101,12 +97,8 @@ pub unsafe fn kpal_plugin_new(lib: &Library) -> Result<Plugin, PluginError> {
     let result = kpal_plugin_new(plugin.as_mut_ptr());
 
     if result != PLUGIN_OK {
-        log::error!("Plugin initialization failed: {}", result);
-        return Err(PluginError::new(
-            "Could not initialize plugin".to_string(),
-            ErrorReason::InternalError,
-            None,
-        ));
+        log::error!("Could not create new plugin. Error code: {}", result);
+        return Err(PluginError::NewPluginError);
     }
 
     Ok(plugin.assume_init())
@@ -121,7 +113,7 @@ pub unsafe fn kpal_plugin_new(lib: &Library) -> Result<Plugin, PluginError> {
 fn set_attributes(
     mut builder: PeripheralBuilder,
     lib: TSLibrary,
-) -> Result<PeripheralBuilder, MergeAttributesError> {
+) -> Result<PeripheralBuilder, PluginError> {
     let lib = lib.lock()?;
     let lib_attrs = lib.attributes().clone();
 
@@ -140,14 +132,14 @@ fn set_attributes(
         if let Some(periph_attr) = periph_attr {
             // Verify that user-provided values are valid.
             if discriminant(attr.value()) != discriminant(periph_attr.value()) {
-                return Err(MergeAttributesError::VariantMismatch(format!(
+                return Err(PluginError::SetAttributesUserInputError(format!(
                     "Provided attribute variant does not match library's: attribute id {}",
                     id
                 )));
             };
 
             if !periph_attr.pre_init() {
-                return Err(MergeAttributesError::IsNotPreInit(format!(
+                return Err(PluginError::SetAttributesUserInputError(format!(
                     "Attribute cannot be set before initialization: attribute id {}",
                     id
                 )));
