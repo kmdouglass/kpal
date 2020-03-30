@@ -166,7 +166,8 @@ pub fn post_peripherals(
 
     let location = format!("/api/v0/peripherals/{}", id);
     let mut response = Response::json(&PeripheralCreateResponse {
-        message: format!("Peripheral successfully created. Location: {}", location),
+        location: location.clone(),
+        message: "Peripheral successfully created".to_owned(),
     });
     response.status_code = 201;
     response.headers.push(("Location".into(), location.into()));

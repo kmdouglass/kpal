@@ -177,6 +177,7 @@ impl From<Attribute> for PeripheralAttributeRead {
 /// Data returned in a response to a request that resulted in the creation of a Peripheral.
 #[derive(Debug, Serialize)]
 pub struct PeripheralCreateResponse {
+    pub location: String,
     pub message: String,
 }
 
