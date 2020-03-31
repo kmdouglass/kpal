@@ -278,7 +278,7 @@ impl Executor {
                 self.error_message(result)
                     .unwrap_or_else(|_| String::from("could not get error message from plugin"))
             };
-            Err(PluginError::AttributeDoesNotExist(msg).into())
+            Err(PluginError::AttributeDoesNotExist(msg))
         } else if result == ATTRIBUTE_IS_NOT_SETTABLE {
             log::debug!("Attribute is not settable: {}", id);
             let msg = unsafe {
@@ -328,7 +328,7 @@ impl Executor {
             return Ok(self.phase);
         }
 
-        Err(PluginError::AdvancePhaseError(self.phase).into())
+        Err(PluginError::AdvancePhaseError(self.phase))
     }
 
     /// Gets all attribute values and names from a Plugin and updates the corresponding Peripheral.

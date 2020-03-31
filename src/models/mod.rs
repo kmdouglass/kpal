@@ -18,7 +18,6 @@ use libloading::Library as Dll;
 
 use kpal_plugin::Val as PluginValue;
 
-use errors::BuilderPartiallyInitializedError;
 pub use errors::ModelError;
 
 /// A model represents one of the system's core abstractions.
@@ -194,8 +193,10 @@ impl AttributeBuilder {
     pub fn build(self) -> Result<Attribute, ModelError> {
         Ok(Attribute {
             id: self.id,
-            name: self.name.ok_or(BuilderPartiallyInitializedError())?,
-            pre_init: self.pre_init.ok_or(BuilderPartiallyInitializedError())?,
+            name: self.name.ok_or(ModelError::BuilderNotInitializedError)?,
+            pre_init: self
+                .pre_init
+                .ok_or(ModelError::BuilderNotInitializedError)?,
             value: self.value,
         })
     }
@@ -415,12 +416,12 @@ impl PeripheralBuilder {
     /// This method will consume the builder.
     pub fn build(self) -> Result<Peripheral, ModelError> {
         if !self.attribute_builders.is_empty() {
-            return Err(BuilderPartiallyInitializedError().into());
+            return Err(ModelError::BuilderNotInitializedError);
         }
 
         Ok(Peripheral {
             attributes: self.attributes,
-            id: self.id.ok_or(BuilderPartiallyInitializedError())?,
+            id: self.id.ok_or(ModelError::BuilderNotInitializedError)?,
             library_id: self.library_id,
             name: self.name,
         })

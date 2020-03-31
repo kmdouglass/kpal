@@ -1,68 +1,45 @@
 //! Error types for the Models module.
 
-use std::{
-    boxed::Box, error::Error, ffi::FromBytesWithNulError, ffi::NulError, fmt, str::Utf8Error,
-};
+use std::{error::Error, ffi::FromBytesWithNulError, ffi::NulError, fmt, str::Utf8Error};
 
 /// An error returned when a manipulation on a Model fails.
 #[derive(Debug)]
-pub struct ModelError {
-    side: Option<Box<dyn Error + 'static + Send>>,
+pub enum ModelError {
+    BuilderNotInitializedError,
+    CannotCreateCStr(FromBytesWithNulError),
+    CannotCreateCString(NulError),
+    CannotCreateString(Utf8Error),
 }
 
-impl Error for ModelError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        // The `as &_` is necessary for successful type inference due to the Send trait.
-        self.side.as_ref().map(|e| e.as_ref() as &_)
-    }
-}
+impl Error for ModelError {}
 
 impl fmt::Display for ModelError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ModelError: {{ Cause: {:?} }}", self.side)
-    }
-}
+        use ModelError::*;
 
-impl From<BuilderPartiallyInitializedError> for ModelError {
-    fn from(error: BuilderPartiallyInitializedError) -> Self {
-        ModelError {
-            side: Some(Box::new(error)),
+        match self {
+            BuilderNotInitializedError => write!(f, "builder is not yet fully initialized"),
+            CannotCreateCStr(e) => write!(f, "cannot create string Attribute because there is an interior nul byte in the input\nCaused by: {}", e),
+            CannotCreateCString(e) => write!(f, "cannot create new CString because there is an interior nul byte in the input\nCaused by: {}", e),
+            CannotCreateString(e) => write!(f, "cannot create Attribute because string is not valid UTF8\nCaused by: {}", e),
         }
     }
 }
 
 impl From<FromBytesWithNulError> for ModelError {
     fn from(error: FromBytesWithNulError) -> Self {
-        ModelError {
-            side: Some(Box::new(error)),
-        }
+        ModelError::CannotCreateCStr(error)
     }
 }
 
 impl From<NulError> for ModelError {
     fn from(error: NulError) -> Self {
-        ModelError {
-            side: Some(Box::new(error)),
-        }
+        ModelError::CannotCreateCString(error)
     }
 }
 
 impl From<Utf8Error> for ModelError {
     fn from(error: Utf8Error) -> Self {
-        ModelError {
-            side: Some(Box::new(error)),
-        }
-    }
-}
-
-/// An error raised when trying to build a model from a partially-initialized builder.
-#[derive(Debug)]
-pub struct BuilderPartiallyInitializedError();
-
-impl Error for BuilderPartiallyInitializedError {}
-
-impl fmt::Display for BuilderPartiallyInitializedError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+        ModelError::CannotCreateString(error)
     }
 }

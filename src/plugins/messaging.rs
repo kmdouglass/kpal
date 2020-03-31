@@ -93,7 +93,7 @@ fn attribute_value_wrapper(
         })
         .map_err(|e| {
             log::error!("Message handler error: {:?}", e);
-            PluginError::from(e)
+            e
         })?;
 
     periph.set_attribute_from_value(id, value)?;
@@ -124,7 +124,7 @@ fn set_attribute_value_wrapper(
         })
         .map_err(|e| {
             log::error!("Message handler error: {:?}", e);
-            PluginError::from(e)
+            e
         })?;
 
     periph.set_attribute_from_value(id, value)?;
