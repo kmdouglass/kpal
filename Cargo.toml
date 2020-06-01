@@ -35,4 +35,4 @@ tempfile = "3.0"
 url = "2.1"
 
 [dev-dependencies]
-reqwest = "0.9"
+reqwest = "0.10"
