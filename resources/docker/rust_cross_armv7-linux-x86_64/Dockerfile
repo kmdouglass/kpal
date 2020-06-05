@@ -1,4 +1,4 @@
-FROM rust:1.42.0-buster as base
+FROM rust:1.44.0-buster as base
 
 # Install the cross-compiler
 RUN apt-get update \
